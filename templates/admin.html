@@ -1,0 +1,719 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>LOL TEAM - Control Panel</title>
+    <!-- Premium Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;600&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg-primary: #080710;
+            --bg-card: rgba(18, 16, 35, 0.7);
+            --accent-purple: #9d5cff;
+            --accent-cyan: #00e5ff;
+            --accent-blue: #2979ff;
+            --text-main: #f1f0f7;
+            --text-muted: #82809a;
+            --text-detail: #c1bfd6;
+            --border-color: rgba(255, 255, 255, 0.06);
+            --success: #00e676;
+            --danger: #ff1744;
+            --warning: #ff9100;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            font-family: 'Plus Jakarta Sans', sans-serif;
+        }
+
+        body {
+            min-height: 100vh;
+            background: var(--bg-primary);
+            background: radial-gradient(circle at 50% 0%, #1a153b 0%, var(--bg-primary) 80%);
+            color: var(--text-main);
+            padding: 30px 15px;
+            display: flex;
+            justify-content: center;
+            align-items: flex-start;
+            overflow-x: hidden;
+        }
+
+        .main-wrapper {
+            width: 100%;
+            max-width: 1000px;
+            display: flex;
+            flex-direction: column;
+            gap: 25px;
+        }
+
+        .glass-navbar {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            background: var(--bg-card);
+            border-radius: 20px;
+            border: 1px solid var(--border-color);
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+            padding: 20px 25px;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.4);
+        }
+
+        .brand-hub {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+        }
+
+        .brand-meta h1 {
+            font-size: 22px;
+            font-weight: 800;
+            background: linear-gradient(90deg, #ffffff, var(--accent-cyan));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            letter-spacing: 0.5px;
+        }
+
+        .brand-meta p {
+            font-size: 11px;
+            color: var(--text-muted);
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        .session-control {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+        }
+
+        .server-status {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            background: rgba(0, 230, 118, 0.06);
+            border: 1px solid rgba(0, 230, 118, 0.2);
+            padding: 8px 14px;
+            border-radius: 10px;
+            font-size: 12px;
+            font-weight: 700;
+            color: var(--success);
+        }
+
+        .status-pulse {
+            width: 8px;
+            height: 8px;
+            background: var(--success);
+            border-radius: 50%;
+        }
+
+        .btn-logout-node {
+            padding: 10px 18px;
+            background: rgba(255, 23, 68, 0.08);
+            border: 1px solid rgba(255, 23, 68, 0.2);
+            border-radius: 10px;
+            color: var(--danger);
+            font-weight: 700;
+            font-size: 12px;
+            text-decoration: none;
+            transition: all 0.2s ease;
+        }
+
+        .btn-logout-node:hover {
+            background: var(--danger);
+            color: #ffffff;
+        }
+
+        .dashboard-panel-card {
+            background: var(--bg-card);
+            border-radius: 22px;
+            border: 1px solid var(--border-color);
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+            padding: 28px;
+            box-shadow: 0 12px 40px rgba(0, 0, 0, 0.3);
+        }
+
+        .panel-heading-block {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 25px;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+            padding-bottom: 16px;
+        }
+
+        .panel-title-text {
+            font-size: 16px;
+            font-weight: 700;
+            color: #ffffff;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .control-matrix-grid {
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+            margin-bottom: 25px;
+        }
+
+        .input-node-layout {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        .input-node-layout label {
+            font-size: 12px;
+            font-weight: 600;
+            color: var(--text-detail);
+        }
+
+        .interactive-input {
+            width: 100%;
+            padding: 14px 16px;
+            background: rgba(10, 8, 20, 0.8);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            border-radius: 12px;
+            color: #ffffff;
+            font-size: 14px;
+            outline: none;
+            transition: all 0.2s ease;
+        }
+
+        .interactive-input:focus {
+            border-color: var(--accent-cyan);
+            background: rgba(14, 12, 28, 0.9);
+        }
+
+        .interactive-select {
+            width: 100%;
+            padding: 14px 16px;
+            background: rgba(10, 8, 20, 0.8);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            border-radius: 12px;
+            color: #ffffff;
+            font-size: 14px;
+            outline: none;
+            cursor: pointer;
+        }
+
+        .interactive-select option {
+            background: #121023;
+            color: #fff;
+        }
+
+        .chrono-capsule-structure {
+            background: rgba(10, 8, 20, 0.4);
+            border: 1px solid rgba(255, 255, 255, 0.04);
+            border-radius: 14px;
+            padding: 16px;
+        }
+
+        .chrono-capsule-title {
+            font-size: 12px;
+            font-weight: 700;
+            color: var(--text-muted);
+            margin-bottom: 12px;
+        }
+
+        .chrono-inputs-flex-row {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 12px;
+        }
+
+        .sub-chrono-field {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+        }
+
+        .sub-chrono-field label {
+            font-size: 11px;
+            font-weight: 600;
+            color: var(--text-muted);
+            text-align: center;
+        }
+
+        .btn-submit-generator {
+            width: 100%;
+            padding: 15px;
+            background: linear-gradient(90deg, var(--accent-purple), var(--accent-blue));
+            border: none;
+            border-radius: 12px;
+            color: #ffffff;
+            font-size: 14px;
+            font-weight: 700;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+
+        .btn-submit-generator:hover {
+            box-shadow: 0 5px 20px rgba(157, 92, 255, 0.3);
+            transform: translateY(-1px);
+        }
+
+        .btn-wipe-database {
+            padding: 8px 16px;
+            background: rgba(255, 23, 68, 0.08);
+            border: 1px solid rgba(255, 23, 68, 0.2);
+            border-radius: 10px;
+            color: var(--danger);
+            font-size: 12px;
+            font-weight: 700;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+
+        .btn-wipe-database:hover {
+            background: var(--danger);
+            color: #ffffff;
+        }
+
+        .terminal-table-container {
+            width: 100%;
+            overflow-x: auto;
+            background: rgba(10, 8, 20, 0.3);
+            border-radius: 14px;
+            border: 1px solid rgba(255, 255, 255, 0.03);
+            margin-bottom: 25px;
+        }
+
+        .terminal-datatable {
+            width: 100%;
+            border-collapse: collapse;
+            text-align: left;
+            font-size: 13px;
+            min-width: 650px;
+        }
+
+        .terminal-datatable th {
+            background: rgba(255, 255, 255, 0.02);
+            padding: 14px 18px;
+            color: var(--text-muted);
+            font-weight: 600;
+            font-size: 11px;
+            text-transform: uppercase;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+        }
+
+        .terminal-datatable td {
+            padding: 14px 18px;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.03);
+            color: #e2e0f0;
+            vertical-align: middle;
+        }
+        .crypto-key-render {
+            font-family: 'JetBrains Mono', monospace;
+            color: var(--accent-cyan);
+            font-weight: 600;
+        }
+
+        .device-quota-pill {
+            background: rgba(41, 121, 255, 0.08);
+            border: 1px solid rgba(41, 121, 255, 0.25);
+            padding: 4px 10px;
+            border-radius: 6px;
+            font-size: 12px;
+            color: #70a5ff;
+            font-family: 'JetBrains Mono', monospace;
+        }
+
+        .panel-badge {
+            background: rgba(157, 92, 255, 0.15);
+            border: 1px solid rgba(157, 92, 255, 0.4);
+            padding: 4px 8px;
+            border-radius: 6px;
+            font-size: 11px;
+            color: #cbafff;
+            font-weight: bold;
+        }
+
+        .timer-countdown-string {
+            font-family: 'JetBrains Mono', monospace;
+            color: #ffffff;
+            background: rgba(255, 255, 255, 0.04);
+            padding: 4px 8px;
+            border-radius: 6px;
+        }
+
+        .actions-flex-wrapper {
+            display: flex;
+            gap: 8px;
+            align-items: center;
+        }
+
+        .btn-action-reset {
+            padding: 7px 12px;
+            background: rgba(255, 145, 0, 0.08);
+            border: 1px solid rgba(255, 145, 0, 0.25);
+            border-radius: 8px;
+            color: var(--warning);
+            cursor: pointer;
+            font-weight: 700;
+            font-size: 11px;
+            transition: all 0.2s ease;
+        }
+
+        .btn-action-reset:hover {
+            background: var(--warning);
+            color: #000000;
+        }
+
+        .btn-action-edit {
+            padding: 7px 12px;
+            background: rgba(0, 229, 255, 0.08);
+            border: 1px solid rgba(0, 229, 255, 0.25);
+            border-radius: 8px;
+            color: var(--accent-cyan);
+            cursor: pointer;
+            font-weight: 700;
+            font-size: 11px;
+            transition: all 0.2s ease;
+        }
+
+        .btn-action-edit:hover {
+            background: var(--accent-cyan);
+            color: #000000;
+        }
+
+        .btn-action-revoke {
+            padding: 7px 12px;
+            background: rgba(255, 23, 68, 0.08);
+            border: 1px solid rgba(255, 23, 68, 0.2);
+            border-radius: 8px;
+            color: var(--danger);
+            cursor: pointer;
+            font-weight: 700;
+            font-size: 11px;
+            transition: all 0.2s ease;
+        }
+
+        .btn-action-revoke:hover {
+            background: var(--danger);
+            color: #ffffff;
+        }
+
+        .fallback-empty-state {
+            text-align: center;
+            color: var(--text-muted);
+            padding: 35px;
+        }
+
+        /* Micro Modal Styling */
+        .micro-modal {
+            display: none;
+            position: fixed;
+            top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0,0,0,0.6);
+            backdrop-filter: blur(5px);
+            justify-content: center; align-items: center;
+            z-index: 1000;
+        }
+        .micro-modal-content {
+            background: #131129;
+            border: 1px solid rgba(255,255,255,0.1);
+            border-radius: 16px;
+            padding: 24px; width: 90%; max-width: 400px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+        }
+        .modal-header-flex {
+            display: flex; justify-content: space-between; align-items: center;
+            margin-bottom: 18px; border-bottom: 1px solid rgba(255,255,255,0.05); padding-bottom: 10px;
+        }
+        .btn-close-modal {
+            background: none; border: none; color: var(--text-muted); font-size: 20px; cursor: pointer;
+        }
+
+        @media (max-width: 768px) {
+            .glass-navbar { padding: 15px; flex-direction: column; gap: 12px; text-align: center; }
+            .session-control { flex-direction: column; width: 100%; gap: 10px; }
+            .server-status, .btn-logout-node { width: 100%; justify-content: center; }
+            .dashboard-panel-card { padding: 18px; border-radius: 16px; }
+            .panel-heading-block { flex-direction: column; gap: 12px; align-items: flex-start; }
+            .btn-wipe-database { width: 100%; }
+            .chrono-inputs-flex-row { grid-template-columns: 1fr; gap: 10px; }
+            .actions-flex-wrapper { flex-direction: column; width: 100%; }
+            .actions-flex-wrapper button, .actions-flex-wrapper form { width: 100%; }
+        }
+    </style>
+</head>
+<body>
+
+    <div class="main-wrapper">
+
+        <header class="glass-navbar">
+            <div class="brand-hub">
+                <div class="brand-meta">
+                    <h1>LOL TEAM</h1>
+                    <p>Licensing Authority Cluster (Active User: {{ current_username }})</p>
+                </div>
+            </div>
+            <div class="session-control">
+                <div class="server-status">
+                    <span class="status-pulse"></span>
+                    Central DB Node Online
+                </div>
+                <a href="/logout" class="btn-logout-node">Terminate Session</a>
+            </div>
+        </header>
+
+        <div style="display: flex; flex-direction: column; gap: 25px;">
+            
+            <form method="POST" action="/admin">
+                <input type="hidden" name="action" value="generate">
+                <section class="dashboard-panel-card">
+                    <div class="panel-heading-block">
+                        <div class="panel-title-text">⚡ Encryption Key Core Provisioner</div>
+                    </div>
+
+                    <div class="control-matrix-grid">
+                        <div class="input-node-layout">
+                            <label for="key_name">Enter key</label>
+                            <input type="text" id="key_name" name="key_name" class="interactive-input" placeholder="Enter key here (or leave empty for random)..." autocomplete="off">
+                        </div>
+
+                        <div class="input-node-layout">
+                            <label for="panel_name">Target Server Response Route</label>
+                            <select id="panel_name" name="panel_name" class="interactive-select">
+                                <option value="Panel 07" selected>Panel 07 (By bilal)</option>
+                                <option value="BKL SENSI">BKL SENSI  (Under Maintenance)</option>
+                                <option value="Panel x3">Panel x3 (Under Maintenance)</option>
+                                <option value="VIP Panel">VIP Panel (Under Maintenance)</option>
+                            </select>
+                        </div>
+                        <div class="chrono-capsule-structure">
+                            <div class="chrono-capsule-title">⏱️ Lifecycle Duration Matrix</div>
+                            <div class="chrono-inputs-flex-row">
+                                <div class="sub-chrono-field">
+                                    <input type="number" id="days" name="days" class="interactive-input" value="30" min="0" required>
+                                    <label for="days">Days</label>
+                                </div>
+                                <div class="sub-chrono-field">
+                                    <input type="number" id="hours" name="hours" class="interactive-input" value="0" min="0" max="23" required>
+                                    <label for="hours">Hours</label>
+                                </div>
+                                <div class="sub-chrono-field">
+                                    <input type="number" id="minutes" name="minutes" class="interactive-input" value="0" min="0" max="59" required>
+                                    <label for="minutes">Mins</label>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="input-node-layout">
+                            <label for="max_devices">Allowed Hardware Instances</label>
+                            <input type="number" id="max_devices" name="max_devices" class="interactive-input" value="1" min="1" required>
+                        </div>
+                    </div>
+
+                    <button type="submit" class="btn-submit-generator">Commit & Mint Access Token</button>
+                </section>
+            </form>
+
+            {% if current_role == 'master' %}
+            <form method="POST" action="/admin">
+                <input type="hidden" name="action" value="add_reseller">
+                <section class="dashboard-panel-card" style="border-color: rgba(255, 145, 0, 0.2);">
+                    <div class="panel-heading-block">
+                        <div class="panel-title-text" style="color: var(--warning);">👥 Add New Sub-Reseller Account</div>
+                    </div>
+                    <div class="control-matrix-grid">
+                        <div class="chrono-inputs-flex-row" style="grid-template-columns: 1fr 1fr;">
+                            <div class="input-node-layout">
+                                <label>Reseller Username</label>
+                                <input type="text" name="reseller_username" class="interactive-input" placeholder="New username..." required autocomplete="off">
+                            </div>
+                            <div class="input-node-layout">
+                                <label>Reseller Password</label>
+                                <input type="text" name="reseller_password" class="interactive-input" placeholder="New password..." required>
+                            </div>
+                        </div>
+                    </div>
+                    <button type="submit" class="btn-submit-generator" style="background: linear-gradient(90deg, var(--warning), #ff6d00);">Register Sub-Reseller Node</button>
+                </section>
+            </form>
+            {% endif %}
+
+        </div>
+
+        <section class="dashboard-panel-card">
+            <div class="panel-heading-block">
+                <div class="panel-title-text">📊 Active Credentials Directory</div>
+                {% if current_role == 'master' %}
+                <form method="POST" action="/admin" style="display: inline; width: auto;">
+                    <input type="hidden" name="action" value="clear_all">
+                    <button type="submit" class="btn-wipe-database" onclick="return confirm('Purge complete dataset?');">Purge Complete Dataset</button>
+                </form>
+                {% endif %}
+            </div>
+
+            <div class="terminal-table-container">
+                <table class="terminal-datatable">
+                    <thead>
+                        <tr>
+                            <th>Secret Key</th>
+                            <th>Devices (Used/Max)</th>
+                            <th>Time Left</th>
+                            <th>Target Route</th>
+                            <th>Owner</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% if keys and keys|length > 0 %}
+                            {% for key in keys %}
+                            <tr>
+                                <td class="crypto-key-render">{{ key.name }}</td>
+                                <td>
+                                    <span class="device-quota-pill">{{ key.used }} / {{ key.devices }}</span>
+                                </td>
+                                <td>
+                                    <span class="timer-countdown-string">{{ key.duration_string }}</span>
+                                </td>
+                                <td>
+                                    <span class="panel-badge">{{ key.panel_name }}</span>
+                                </td>
+                                <td>
+                                    <span style="font-weight: 600; color: var(--text-detail);">{{ key.owner }}</span>
+                                </td>
+                                <td>
+                                    <div class="actions-flex-wrapper">
+                                        <form method="POST" action="/admin" style="display:inline;">
+                                            <input type="hidden" name="action" value="reset_device">
+                                            <input type="hidden" name="key_name" value="{{ key.name }}">
+                                            <button type="submit" class="btn-action-reset">Reset</button>
+                                        </form>
+
+                                        <button type="button" class="btn-action-edit" onclick="openEditModal('{{ key.name }}', '{{ key.devices }}', '{{ key.panel_name }}')">Edit</button>
+
+                                        <form method="POST" action="/admin" style="display:inline;">
+                                            <input type="hidden" name="action" value="delete_key">
+                                            <input type="hidden" name="key_name" value="{{ key.name }}">
+                                            <button type="submit" class="btn-action-revoke" onclick="return confirm('Delete this key?');">Delete</button>
+                                        </form>
+                                    </div>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        {% else %}
+                            <tr>
+                                <td colspan="6" class="fallback-empty-state">No active keys discovered in this node.</td>
+                            </tr>
+                        {% endif %}
+                    </tbody>
+                </table>
+            </div>
+        </section>
+
+        {% if current_role == 'master' and resellers %}
+        <section class="dashboard-panel-card" style="border-color: rgba(0, 229, 255, 0.1);">
+            <div class="panel-heading-block">
+                <div class="panel-title-text" style="color: var(--accent-cyan);">👥 Sub-Resellers Node Management</div>
+            </div>
+            <div class="terminal-table-container">
+                <table class="terminal-datatable">
+                    <thead>
+                        <tr>
+                            <th>Username</th>
+                            <th>Password</th>
+                            <th>Bound HWID / IP</th>
+                            <th>Total Keys Created</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for reseller in resellers %}
+                        <tr>
+                            <td style="font-weight: 700;">{{ reseller.username }}</td>
+                            <td class="crypto-key-render">{{ reseller.password }}</td>
+                            <td style="font-size: 12px; color: var(--text-detail);">{{ reseller.bound_ip }}</td>
+                            <td><span class="device-quota-pill" style="background: rgba(157, 92, 255, 0.1); color: #cbafff;">{{ reseller.key_count }} Keys</span></td>
+                            <td>
+                                <div class="actions-flex-wrapper">
+                                    <form method="POST" action="/admin" style="display:inline;">
+                                        <input type="hidden" name="action" value="reset_reseller_ip">
+                                        <input type="hidden" name="reseller_username" value="{{ reseller.username }}">
+                                        <button type="submit" class="btn-action-reset" style="color: var(--warning); border-color: rgba(255, 145, 0, 0.2);">Reset HWID</button>
+                                    </form>
+
+                                    <form method="POST" action="/admin" style="display:inline;">
+                                        <input type="hidden" name="action" value="delete_reseller">
+                                        <input type="hidden" name="reseller_username" value="{{ reseller.username }}">
+                                        <button type="submit" class="btn-action-revoke" onclick="return confirm('Delete this reseller and all their keys?');">Remove</button>
+                                    </form>
+                                </div>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </section>
+        {% endif %}
+
+    </div>
+
+    <!-- Micro Modal -->
+    <div id="editModal" class="micro-modal">
+        <div class="micro-modal-content">
+            <div class="modal-header-flex">
+                <h3 style="font-size: 16px; font-weight:700;">⚙️ Edit Token Config</h3>
+                <button type="button" class="btn-close-modal" onclick="closeEditModal()">&times;</button>
+            </div>
+            <form method="POST" action="/admin">
+                <input type="hidden" name="action" value="edit_key">
+                <input type="hidden" id="modal_key_name" name="key_name">
+                
+                <div class="control-matrix-grid" style="gap: 15px;">
+                    <div class="input-node-layout">
+                        <label>Max Devices</label>
+                        <input type="number" id="modal_max_devices" name="new_max_devices" class="interactive-input" min="1" required>
+                    </div>
+                    <div class="input-node-layout">
+                        <label>Target Route</label>
+                        <select id="modal_panel_name" name="new_panel" class="interactive-select">
+                            <option value="Panel 07">Panel 07</option>
+                            <option value="BKL SENSI">BKL SENSI</option>
+                            <option value="Panel x3">Panel x3</option>
+                            <option value="VIP Panel">VIP Panel</option>
+                        </select>
+                    </div>
+                    <div class="input-node-layout">
+                        <label>Extend Lifetime (Add Days)</label>
+                        <input type="number" name="add_days" class="interactive-input" value="0" min="0">
+                    </div>
+                </div>
+                <button type="submit" class="btn-submit-generator" style="margin-top: 15px;">Save Configurations</button>
+            </form>
+        </div>
+    </div>
+
+    <!-- Modal Scripts -->
+    <script>
+        function openEditModal(keyName, maxDevices, panelName) {
+            document.getElementById('modal_key_name').value = keyName;
+            document.getElementById('modal_max_devices').value = maxDevices;
+            document.getElementById('modal_panel_name').value = panelName;
+            document.getElementById('editModal').style.display = 'flex';
+        }
+
+        function closeEditModal() {
+            document.getElementById('editModal').style.display = 'none';
+        }
+
+        window.onclick = function(event) {
+            let modal = document.getElementById('editModal');
+            if (event.target == modal) {
+                modal.style.display = "none";
+            }
+        }
+    </script>
+</body>
+</html>
