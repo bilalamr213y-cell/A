@@ -331,30 +331,24 @@ def verify():
     panel_check = (row[4] if row and row[4] else "").strip().upper()
     is_bkl_sensi = (panel_check == "BKL SENSI")
 
-    # الدالة الشاملة لاستجابات BKL SENSI (تغطي كافة التنسيقات المتوقعة من libLewis.so)
-    def bkl_response(status_bool, text_msg, expiry_val="Never"):
-        return jsonify({
-            "status": status_bool,
-            "success": status_bool,
-            "valid": status_bool,
-            "message": text_msg,
-            "reason": text_msg,
-            "expiry": expiry_val,
-            "expired_date": expiry_val
-        }), 200
+    # استجابة Plain Text المخصصة لـ BKL SENSI (تطابق متطلبات libLewis.so)
+    def bkl_response(status_bool):
+        if status_bool:
+            return "Ativado com sucesso!", 200, {'Content-Type': 'text/plain; charset=utf-8'}
+        return "Licença inválida!", 200, {'Content-Type': 'text/plain; charset=utf-8'}
 
     # Return registered failure if no key is supplied
     if not key:
         conn.close()
         if is_bkl_sensi:
-            return bkl_response(False, "Licença inválida!")
+            return bkl_response(False)
         return jsonify({"valid": False, "message": "Invalid Key"}), 200
 
     # Key not found in SQLite Database
     if not row:
         conn.close()
         if is_bkl_sensi:
-            return bkl_response(False, "Licença inválida!")
+            return bkl_response(False)
         return jsonify({"valid": False, "message": "Invalid Key"}), 200
 
     max_devs, devices_list, expiry, status, panel_name = row
@@ -369,7 +363,7 @@ def verify():
     if status == "banned":
         conn.close()
         if is_bkl_sensi:
-            return bkl_response(False, "Licença inválida!")
+            return bkl_response(False)
         if is_bull_team:
             return jsonify({"status": False, "reason": "YOUR ACCOUNT IS BANNED"})
         return jsonify({"success": False, "message": "banned"})
@@ -380,7 +374,7 @@ def verify():
     except:
         conn.close()
         if is_bkl_sensi:
-            return bkl_response(False, "Erro ao carregar")
+            return "Erro ao carregar", 200, {'Content-Type': 'text/plain; charset=utf-8'}
         if is_bull_team:
             return jsonify({"status": False, "reason": "DATE CALCULATION ERROR"})
         return jsonify({"success": False, "message": "date_error"})
@@ -388,7 +382,7 @@ def verify():
     if datetime.now() > expiry_dt:
         conn.close()
         if is_bkl_sensi:
-            return bkl_response(False, "Licença inválida!")
+            return bkl_response(False)
         if is_bull_team:
             return jsonify({"status": False, "reason": "KEY EXPIRED"})
         return jsonify({"success": False, "message": "expired"})
@@ -399,7 +393,7 @@ def verify():
     if device_id not in devices and len(devices) >= max_devs:
         conn.close()
         if is_bkl_sensi:
-            return bkl_response(False, "Licença inválida!")
+            return bkl_response(False)
         if is_bull_team:
             return jsonify({"status": False, "reason": "DEVICE LIMIT REACHED"})
         return jsonify({"success": False, "message": "limit_reached"})
@@ -412,7 +406,7 @@ def verify():
     
     # Route to BKL SENSI response
     if is_bkl_sensi:
-        return bkl_response(True, "Ativado com sucesso!", expiry)
+        return bkl_response(True)
         
     # Route to Bull Team (Panel 3 / Panel x3) response
     elif is_bull_team:
