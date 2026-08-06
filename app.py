@@ -324,17 +324,26 @@ def verify():
     if req_type == "init":
         return jsonify(response_panel_07)
 
-    # Return registered failure if no key is supplied
-    if not key:
-        return jsonify({"valid": False, "message": "Invalid Key"}), 200
-
     conn = get_db_connection()
     # Case-insensitive query using COLLATE NOCASE to prevent mismatch issues
     row = conn.execute("SELECT max_devices, devices_list, expiry_date, status, panel_name FROM keys WHERE [key] = ? COLLATE NOCASE", (key,)).fetchone()
 
+    # Determine if BKL SENSI is selected
+    panel_check = (row[4] if row and row[4] else "").strip().upper()
+    is_bkl_sensi = (panel_check == "BKL SENSI")
+
+    # Return registered failure if no key is supplied
+    if not key:
+        conn.close()
+        if is_bkl_sensi:
+            return jsonify({"status": False, "message": "Licença inválida!"}), 200
+        return jsonify({"valid": False, "message": "Invalid Key"}), 200
+
     # Key not found in SQLite Database
     if not row:
         conn.close()
+        if is_bkl_sensi:
+            return jsonify({"status": False, "message": "Licença inválida!"}), 200
         return jsonify({"valid": False, "message": "Invalid Key"}), 200
 
     max_devs, devices_list, expiry, status, panel_name = row
@@ -344,15 +353,12 @@ def verify():
     
     # Check if Panel x3 (The 3rd option) or Bull Team is chosen
     is_bull_team = (panel_clean == "Panel x3" or "x3" in panel_clean.lower() or "bull" in panel_clean.lower())
-    
-    # Check if BKL SENSI (Case Insensitive) is chosen
-    is_bkl_sensi = (panel_clean.upper() == "BKL SENSI")
 
     # Key is banned check
     if status == "banned":
         conn.close()
         if is_bkl_sensi:
-            return jsonify({"valid": False, "message": "Key Disabled"}), 200
+            return jsonify({"status": False, "message": "Licença inválida!"}), 200
         if is_bull_team:
             return jsonify({"status": False, "reason": "YOUR ACCOUNT IS BANNED"})
         return jsonify({"success": False, "message": "banned"})
@@ -363,7 +369,7 @@ def verify():
     except:
         conn.close()
         if is_bkl_sensi:
-            return jsonify({"valid": False, "message": "Invalid Key"}), 200
+            return jsonify({"status": False, "message": "Erro ao carregar"}), 200
         if is_bull_team:
             return jsonify({"status": False, "reason": "DATE CALCULATION ERROR"})
         return jsonify({"success": False, "message": "date_error"})
@@ -371,7 +377,7 @@ def verify():
     if datetime.now() > expiry_dt:
         conn.close()
         if is_bkl_sensi:
-            return jsonify({"valid": False, "message": "Key Expired"}), 200
+            return jsonify({"status": False, "message": "Licença inválida!"}), 200
         if is_bull_team:
             return jsonify({"status": False, "reason": "KEY EXPIRED"})
         return jsonify({"success": False, "message": "expired"})
@@ -382,7 +388,7 @@ def verify():
     if device_id not in devices and len(devices) >= max_devs:
         conn.close()
         if is_bkl_sensi:
-            return jsonify({"valid": False, "message": "Key used on another device"}), 200
+            return jsonify({"status": False, "message": "Licença inválida!"}), 200
         if is_bull_team:
             return jsonify({"status": False, "reason": "DEVICE LIMIT REACHED"})
         return jsonify({"success": False, "message": "limit_reached"})
@@ -393,11 +399,12 @@ def verify():
         conn.execute("COMMIT")
     conn.close()
     
-    # Route to BKL SENSI response
+    # Route to BKL SENSI response (Matching strings from libLewis.so)
     if is_bkl_sensi:
         return jsonify({
-            "valid": True,
-            "message": "Welcome to BILAL!"
+            "status": True,
+            "message": "Ativado com sucesso!",
+            "expired_date": expiry
         }), 200
         
     # Route to Bull Team (Panel 3 / Panel x3) response
