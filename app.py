@@ -331,15 +331,17 @@ def verify():
     panel_check = (row[4] if row and row[4] else "").strip().upper()
     is_bkl_sensi = (panel_check == "BKL SENSI")
 
-    # Helper function for BKL SENSI response handling
-    def bkl_response(success, msg):
-        if request.is_json or "json" in request.headers.get("Accept", ""):
-            return jsonify({
-                "status": success,
-                "message": msg,
-                "result": msg
-            }), 200
-        return msg, 200, {'Content-Type': 'text/plain; charset=utf-8'}
+    # الدالة الشاملة لاستجابات BKL SENSI (تغطي كافة التنسيقات المتوقعة من libLewis.so)
+    def bkl_response(status_bool, text_msg, expiry_val="Never"):
+        return jsonify({
+            "status": status_bool,
+            "success": status_bool,
+            "valid": status_bool,
+            "message": text_msg,
+            "reason": text_msg,
+            "expiry": expiry_val,
+            "expired_date": expiry_val
+        }), 200
 
     # Return registered failure if no key is supplied
     if not key:
@@ -410,7 +412,7 @@ def verify():
     
     # Route to BKL SENSI response
     if is_bkl_sensi:
-        return bkl_response(True, "Ativado com sucesso!")
+        return bkl_response(True, "Ativado com sucesso!", expiry)
         
     # Route to Bull Team (Panel 3 / Panel x3) response
     elif is_bull_team:
