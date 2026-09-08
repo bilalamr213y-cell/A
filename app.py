@@ -281,6 +281,8 @@ def logout():
     session.clear()
     return redirect(url_for("login"))
 
+# دعم مسارات Supabase REST API المخصصة لـ BKL Sensi (متوافق مع الصور المرفقة /functions/v1/license-api)
+@app.route("/functions/v1/license-api", methods=["POST", "GET"])
 @app.route("/v", methods=["POST", "GET"])
 def verify():
     json_data = request.get_json(silent=True) or {}
@@ -330,11 +332,11 @@ def verify():
     conn = get_db_connection()
     row = conn.execute("SELECT max_devices, devices_list, expiry_date, status, panel_name FROM keys WHERE [key] = ? COLLATE NOCASE", (key,)).fetchone()
 
-    # Determine panel mode
+    # Determine panel mode - مطابقة تامة مع BKL Sensi حسب الصور وتحليل الـ .so
     panel_check = (row[4] if row and row[4] else "").strip().upper()
-    is_bkl_sensi = (panel_check == "BKL SENSI" or req_action == "verify")
+    is_bkl_sensi = ("BKL" in panel_check or "SENSI" in panel_check or req_action == "verify" or request.path.endswith("/license-api"))
 
-    # Supabase / libdatastore_shared.so response handler for BKL SENSI
+    # هيكل استجابة BKL Sensi متوافق مع الصور المرفقة تماماً (libdatastore_shared.so)
     def bkl_response(status_bool, message=""):
         if status_bool:
             return jsonify({
