@@ -289,8 +289,9 @@ def verify():
     values_data = request.values or {}
 
     req_type = (json_data.get("type") or form_data.get("type") or args_data.get("type") or values_data.get("type") or "").strip()
+    req_action = (json_data.get("action") or form_data.get("action") or args_data.get("action") or values_data.get("action") or "").strip()
     
-    # Check all possible parameter keys
+    # 1. Extraction of Key / License
     key = (
         json_data.get("key") or form_data.get("key") or args_data.get("key") or values_data.get("key") or
         json_data.get("username") or form_data.get("username") or args_data.get("username") or values_data.get("username") or
@@ -298,12 +299,14 @@ def verify():
         json_data.get("user") or form_data.get("user") or args_data.get("user") or values_data.get("user") or ""
     ).strip()
 
+    # 2. Extraction of Device Fingerprint / Challenge (HWID)
     device_id = (
+        json_data.get("challenge") or form_data.get("challenge") or args_data.get("challenge") or values_data.get("challenge") or
         json_data.get("device_id") or form_data.get("device_id") or args_data.get("device_id") or values_data.get("device_id") or
         json_data.get("hwid") or form_data.get("hwid") or args_data.get("hwid") or values_data.get("hwid") or "unknown_device"
     ).strip()
 
-    # 1. Panel 07 Default Response
+    # Panel 07 Default Response
     response_panel_07 = {
         "success": True, 
         "code": 68, 
@@ -327,54 +330,54 @@ def verify():
     conn = get_db_connection()
     row = conn.execute("SELECT max_devices, devices_list, expiry_date, status, panel_name FROM keys WHERE [key] = ? COLLATE NOCASE", (key,)).fetchone()
 
-    # Determine if BKL SENSI is selected
+    # Determine panel mode
     panel_check = (row[4] if row and row[4] else "").strip().upper()
-    is_bkl_sensi = (panel_check == "BKL SENSI")
+    is_bkl_sensi = (panel_check == "BKL SENSI" or req_action == "verify")
 
-    # استجابة Plain Text المخصصة لـ BKL SENSI (تطابق متطلبات libLewis.so)
-    def bkl_response(status_bool):
+    # Supabase / libdatastore_shared.so response handler for BKL SENSI
+    def bkl_response(status_bool, message=""):
         if status_bool:
-            return "Ativado com sucesso!", 200, {'Content-Type': 'text/plain; charset=utf-8'}
-        return "Licença inválida!", 200, {'Content-Type': 'text/plain; charset=utf-8'}
+            return jsonify({
+                "status": "success",
+                "message": "ALL SECURITY CHECKS PASSED",
+                "valid": True,
+                "code": 200,
+                "data": "Ativado com sucesso!"
+            }), 200
+        
+        return jsonify({
+            "status": "error",
+            "message": message if message else "SECURITY VIOLATIONS / INVALID KEY",
+            "valid": False,
+            "code": 403
+        }), 200
 
-    # Return registered failure if no key is supplied
-    if not key:
+    # Key validation checks
+    if not key or not row:
         conn.close()
         if is_bkl_sensi:
-            return bkl_response(False)
-        return jsonify({"valid": False, "message": "Invalid Key"}), 200
-
-    # Key not found in SQLite Database
-    if not row:
-        conn.close()
-        if is_bkl_sensi:
-            return bkl_response(False)
+            return bkl_response(False, "Invalid License Key")
         return jsonify({"valid": False, "message": "Invalid Key"}), 200
 
     max_devs, devices_list, expiry, status, panel_name = row
     
-    # Process panel name clean check
     panel_clean = panel_name.strip() if panel_name else ""
-    
-    # Check if Panel x3 (The 3rd option) or Bull Team is chosen
     is_bull_team = (panel_clean == "Panel x3" or "x3" in panel_clean.lower() or "bull" in panel_clean.lower())
 
-    # Key is banned check
     if status == "banned":
         conn.close()
         if is_bkl_sensi:
-            return bkl_response(False)
+            return bkl_response(False, "ACCOUNT BANNED")
         if is_bull_team:
             return jsonify({"status": False, "reason": "YOUR ACCOUNT IS BANNED"})
         return jsonify({"success": False, "message": "banned"})
 
-    # Validate expiration dates
     try:
         expiry_dt = datetime.strptime(expiry, '%Y-%m-%d %H:%M:%S')
     except:
         conn.close()
         if is_bkl_sensi:
-            return "Erro ao carregar", 200, {'Content-Type': 'text/plain; charset=utf-8'}
+            return bkl_response(False, "DATE CALCULATION ERROR")
         if is_bull_team:
             return jsonify({"status": False, "reason": "DATE CALCULATION ERROR"})
         return jsonify({"success": False, "message": "date_error"})
@@ -382,18 +385,17 @@ def verify():
     if datetime.now() > expiry_dt:
         conn.close()
         if is_bkl_sensi:
-            return bkl_response(False)
+            return bkl_response(False, "LICENSE EXPIRED")
         if is_bull_team:
             return jsonify({"status": False, "reason": "KEY EXPIRED"})
         return jsonify({"success": False, "message": "expired"})
 
-    # Check hardware instance and device limits
     devices = [d for d in (devices_list or "").split(",") if d]
 
     if device_id not in devices and len(devices) >= max_devs:
         conn.close()
         if is_bkl_sensi:
-            return bkl_response(False)
+            return bkl_response(False, "HWID LIMIT REACHED")
         if is_bull_team:
             return jsonify({"status": False, "reason": "DEVICE LIMIT REACHED"})
         return jsonify({"success": False, "message": "limit_reached"})
@@ -404,11 +406,10 @@ def verify():
         conn.execute("COMMIT")
     conn.close()
     
-    # Route to BKL SENSI response
+    # Final Response Routing
     if is_bkl_sensi:
         return bkl_response(True)
         
-    # Route to Bull Team (Panel 3 / Panel x3) response
     elif is_bull_team:
         dynamic_real_token = f"FREEFIRE-help-2k-subscrib-{uuid.uuid4().hex}-{uuid.uuid4().hex[:32]}"
         dynamic_token = uuid.uuid4().hex
@@ -439,7 +440,6 @@ def verify():
         }
         return jsonify(response_bull_team)
         
-    # Default route (Panel 07)
     else:
         return jsonify(response_panel_07)
 
