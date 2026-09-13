@@ -1,16 +1,26 @@
 import asyncio
 import logging
+from datetime import datetime, time
+import pytz
 import requests
-from telegram import Update
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.ext import (
     ApplicationBuilder,
+    CallbackQueryHandler,
     CommandHandler,
     ContextTypes,
+    MessageHandler,
+    filters,
 )
 
 BOT_TOKEN = "8776921304:AAGRrWDoNy5WWib5V3_wkIlZD_nEttflvDc"
 OTP_URL = "https://100067.connect.garena.com/game/account_security/swap:send_otp"
 INIT_URL = "https://100067.connect.garena.com/game/account_security/"
+
+ALGIERS_TZ = pytz.timezone("Africa/Algiers")
+START_TIME = time(4, 0, 0)
+END_TIME = time(6, 0, 0)
+INTERVAL_SECONDS = 300
 
 logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
@@ -20,129 +30,238 @@ logging.basicConfig(
 target_email = None
 is_running = False
 active_chat_id = None
-sending_task = None
-interval_seconds = 300
+scheduler_task = None
+waiting_for_email_input = False
 
 def execute_garena_request(email: str) -> tuple[bool, str]:
     session = requests.Session()
-    
     headers = {
-        "User-Agent": "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36",
-        "Accept": "application/json, text/plain, */*",
-        "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
-        "X-Requested-With": "XMLHttpRequest",
-        "Origin": "https://100067.connect.garena.com",
-        "Referer": "https://100067.connect.garena.com/game/account_security/"
+        "User-Agent": "GarenaMSDK/4.0.42(22101316I ;Android 14;en;US;app 2.131.1 2019118334;)",
+        "Accept": "application/json",
+        "Content-Type": "application/x-www-form-urlencoded",
+        "Host": "100067.connect.garena.com",
+        "Connection": "Keep-Alive",
+        "Accept-Encoding": "gzip"
     }
-    
     try:
         session.get(INIT_URL, headers=headers, timeout=10)
-        
         payload = {
-            "email": email
+            "app_id": "100067",
+            "email": email,
+            "locale": "en_DZ"
         }
-        
         response = session.post(OTP_URL, headers=headers, data=payload, timeout=15)
-        
         if response.status_code == 200:
-            if '"result":0' in response.text:
+            if '"result":0' in response.text or '"result": 0' in response.text:
                 return True, response.text
             else:
-                return False, f"Unexpected response: {response.text}"
+                return False, f"Server response: {response.text}"
         else:
             return False, f"Server error status: {response.status_code} - {response.text}"
-            
     except requests.exceptions.Timeout:
         return False, "Connection timeout."
     except requests.exceptions.ConnectionError:
-        return False, "Network or server connection failed."
+        return False, "Network connection failed."
     except Exception as err:
-        return False, f"Unexpected error: {str(err)}"
+        return False, f"Error: {str(err)}"
 
-async def auto_sender_loop(context: ContextTypes.DEFAULT_TYPE):
-    global is_running, target_email, active_chat_id
-    while is_running and target_email and active_chat_id:
-        success, details = await asyncio.to_thread(execute_garena_request, target_email)
-        if success:
-            msg = f"✅ OTP sent successfully!\n📧 Email: `{target_email}`\n⏱️ Next request in 5 minutes."
-        else:
-            msg = f"❌ Failed to send OTP!\n📧 Email: `{target_email}`\n⚠️ Details: `{details}`\n🔄 Retrying in 5 minutes."
+def build_main_menu() -> InlineKeyboardMarkup:
+    keyboard = [
+        [InlineKeyboardButton("📧 Set Target Email", callback_data="btn_set_email")],
+        [
+            InlineKeyboardButton("🚀 Start Automation (04:00 AM)", callback_data="btn_start_auto"),
+            InlineKeyboardButton("🛑 Stop Automation", callback_data="btn_stop_auto")
+        ],
+        [
+            InlineKeyboardButton("⚡ Send One OTP Now", callback_data="btn_send_now"),
+            InlineKeyboardButton("📊 Check Status", callback_data="btn_status")
+        ]
+    ]
+    return InlineKeyboardMarkup(keyboard)
+
+async def send_telegram_alert(context: ContextTypes.DEFAULT_TYPE, message: str):
+    global active_chat_id
+    if active_chat_id:
         try:
-            await context.bot.send_message(chat_id=active_chat_id, text=msg, parse_mode="Markdown")
-        except Exception as e:
-            logging.error(f"Failed to send telegram message: {e}")
-        await asyncio.sleep(interval_seconds)
+            await context.bot.send_message(
+                chat_id=active_chat_id,
+                text=message,
+                parse_mode="Markdown"
+            )
+        except Exception as err:
+            logging.error(f"Failed to send alert: {err}")
+
+async def scheduled_dispatcher_loop(context: ContextTypes.DEFAULT_TYPE):
+    global is_running, target_email
+    await send_telegram_alert(
+        context,
+        "⏰ **Scheduler Activated!**\nWaiting for 04:00 AM (Algeria Time) to begin dispatch sequence..."
+    )
+    
+    while is_running and target_email:
+        now_algiers = datetime.now(ALGIERS_TZ)
+        current_time = now_algiers.time()
+        
+        if START_TIME <= current_time <= END_TIME:
+            success, details = await asyncio.to_thread(execute_garena_request, target_email)
+            timestamp = now_algiers.strftime("%Y-%m-%d %H:%M:%S")
+            if success:
+                msg = (
+                    f"✅ **OTP Sent Successfully!**\n"
+                    f"📧 Email: `{target_email}`\n"
+                    f"🕒 Time: `{timestamp}` (Algeria Time)\n"
+                    f"⏱️ Next attempt in 5 minutes."
+                )
+            else:
+                msg = (
+                    f"❌ **OTP Request Failed!**\n"
+                    f"📧 Email: `{target_email}`\n"
+                    f"🕒 Time: `{timestamp}` (Algeria Time)\n"
+                    f"⚠️ Details: `{details}`\n"
+                    f"🔄 Retrying in 5 minutes."
+                )
+            await send_telegram_alert(context, msg)
+            await asyncio.sleep(INTERVAL_SECONDS)
+        elif current_time > END_TIME:
+            await send_telegram_alert(
+                context,
+                "🏁 **Daily Window Closed (06:00 AM reached).** Automation completed for today."
+            )
+            is_running = False
+            break
+        else:
+            await asyncio.sleep(30)
 
 async def start_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    welcome_text = (
-        "⚙️ **Free Fire OTP Bot Advanced Control Panel**\n\n"
-        "Commands:\n"
-        "1️⃣ `/set_email <email>` - Set target email.\n"
-        "2️⃣ `/start_auto` - Start automated sending every 5 mins.\n"
-        "3️⃣ `/stop_auto` - Stop automation.\n"
-        "4️⃣ `/send_now` - Send one OTP immediately.\n"
-        "5️⃣ `/status` - Check bot status."
-    )
-    await update.message.reply_text(welcome_text, parse_mode="Markdown")
-
-async def set_email_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    global target_email
-    if not context.args:
-        await update.message.reply_text("⚠️ Please provide an email.\nExample: `/set_email test@gmail.com`", parse_mode="Markdown")
-        return
-    target_email = context.args[0].strip()
-    await update.message.reply_text(f"🎯 Target email set to: `{target_email}`", parse_mode="Markdown")
-
-async def start_auto_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    global is_running, target_email, active_chat_id, sending_task
-    if not target_email:
-        await update.message.reply_text("❌ Please set an email first using `/set_email`.", parse_mode="Markdown")
-        return
-    if is_running:
-        await update.message.reply_text("⚠️ Automated sending is already running!", parse_mode="Markdown")
-        return
-    is_running = True
+    global active_chat_id
     active_chat_id = update.effective_chat.id
-    await update.message.reply_text(f"🚀 Automation started successfully!\n📧 Target: `{target_email}`\n⏱️ Interval: 5 minutes.", parse_mode="Markdown")
-    sending_task = asyncio.create_task(auto_sender_loop(context))
+    welcome_text = (
+        "⚙️ **Free Fire Automated OTP Dispatcher**\n\n"
+        "• **Schedule:** Every day from 04:00 AM to 06:00 AM (Algeria Time)\n"
+        "• **Interval:** Every 5 minutes\n\n"
+        "Use the interactive buttons below to control the bot:"
+    )
+    await update.message.reply_text(
+        welcome_text,
+        reply_markup=build_main_menu(),
+        parse_mode="Markdown"
+    )
 
-async def stop_auto_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    global is_running, sending_task
-    if not is_running:
-        await update.message.reply_text("⚠️ Automation is already stopped.", parse_mode="Markdown")
-        return
-    is_running = False
-    if sending_task:
-        sending_task.cancel()
-        sending_task = None
-    await update.message.reply_text("🛑 Automation stopped successfully.", parse_mode="Markdown")
+async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    global is_running, target_email, active_chat_id, scheduler_task, waiting_for_email_input
+    query = update.callback_query
+    await query.answer()
+    active_chat_id = update.effective_chat.id
 
-async def send_now_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    global target_email
-    if not target_email:
-        await update.message.reply_text("❌ Set an email first using `/set_email`", parse_mode="Markdown")
-        return
-    await update.message.reply_text("⏳ Sending request now...")
-    success, details = await asyncio.to_thread(execute_garena_request, target_email)
-    if success:
-        await update.message.reply_text(f"✅ Sent successfully!\n`{details}`", parse_mode="Markdown")
+    if query.data == "btn_set_email":
+        waiting_for_email_input = True
+        await query.edit_message_text(
+            "📩 Please send the target email address in a message now:",
+            parse_mode="Markdown"
+        )
+
+    elif query.data == "btn_start_auto":
+        if not target_email:
+            await query.edit_message_text(
+                "❌ **No target email set!** Please click 'Set Target Email' first.",
+                reply_markup=build_main_menu(),
+                parse_mode="Markdown"
+            )
+            return
+        if is_running:
+            await query.edit_message_text(
+                "⚠️ **Automation is already running!**",
+                reply_markup=build_main_menu(),
+                parse_mode="Markdown"
+            )
+            return
+        is_running = True
+        scheduler_task = asyncio.create_task(scheduled_dispatcher_loop(context))
+        await query.edit_message_text(
+            f"🚀 **Automation Scheduled!**\n"
+            f"📧 Target: `{target_email}`\n"
+            f"🕒 Active Window: 04:00 AM - 06:00 AM (Algeria Time)\n"
+            f"⏱️ Interval: Every 5 minutes",
+            reply_markup=build_main_menu(),
+            parse_mode="Markdown"
+        )
+
+    elif query.data == "btn_stop_auto":
+        if not is_running:
+            await query.edit_message_text(
+                "⚠️ **Automation is not active.**",
+                reply_markup=build_main_menu(),
+                parse_mode="Markdown"
+            )
+            return
+        is_running = False
+        if scheduler_task:
+            scheduler_task.cancel()
+            scheduler_task = None
+        await query.edit_message_text(
+            "🛑 **Automation stopped successfully.**",
+            reply_markup=build_main_menu(),
+            parse_mode="Markdown"
+        )
+
+    elif query.data == "btn_send_now":
+        if not target_email:
+            await query.edit_message_text(
+                "❌ **No target email set!** Please set an email first.",
+                reply_markup=build_main_menu(),
+                parse_mode="Markdown"
+            )
+            return
+        await query.edit_message_text("⏳ Processing manual OTP request...")
+        success, details = await asyncio.to_thread(execute_garena_request, target_email)
+        if success:
+            res_msg = f"✅ **Instant OTP Sent!**\n`{details}`"
+        else:
+            res_msg = f"❌ **Manual Request Failed!**\n`{details}`"
+        await context.bot.send_message(
+            chat_id=active_chat_id,
+            text=res_msg,
+            reply_markup=build_main_menu(),
+            parse_mode="Markdown"
+        )
+
+    elif query.data == "btn_status":
+        now_algiers = datetime.now(ALGIERS_TZ).strftime("%Y-%m-%d %H:%M:%S")
+        status_str = "Scheduled / Running 🟢" if is_running else "Stopped 🔴"
+        email_str = target_email if target_email else "Not set"
+        msg = (
+            f"📊 **Bot Status Summary**\n\n"
+            f"• **Status:** {status_str}\n"
+            f"• **Target Email:** `{email_str}`\n"
+            f"• **Time Window:** 04:00 AM - 06:00 AM\n"
+            f"• **Current Algeria Time:** `{now_algiers}`"
+        )
+        await query.edit_message_text(
+            msg,
+            reply_markup=build_main_menu(),
+            parse_mode="Markdown"
+        )
+
+async def text_message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    global target_email, waiting_for_email_input
+    if waiting_for_email_input:
+        target_email = update.message.text.strip()
+        waiting_for_email_input = False
+        await update.message.reply_text(
+            f"🎯 Target email updated to: `{target_email}`",
+            reply_markup=build_main_menu(),
+            parse_mode="Markdown"
+        )
     else:
-        await update.message.reply_text(f"❌ Request failed!\n`{details}`", parse_mode="Markdown")
-
-async def status_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    status_str = "Running 🟢" if is_running else "Stopped 🔴"
-    email_str = target_email if target_email else "Not set"
-    msg = f"📊 **Bot Status:**\n• Status: {status_str}\n• Target Email: `{email_str}`\n• Interval: 5 minutes"
-    await update.message.reply_text(msg, parse_mode="Markdown")
+        await update.message.reply_text(
+            "Please use the buttons below to interact with the bot:",
+            reply_markup=build_main_menu()
+        )
 
 if __name__ == "__main__":
     app = ApplicationBuilder().token(BOT_TOKEN).build()
     app.add_handler(CommandHandler("start", start_cmd))
-    app.add_handler(CommandHandler("set_email", set_email_cmd))
-    app.add_handler(CommandHandler("start_auto", start_auto_cmd))
-    app.add_handler(CommandHandler("stop_auto", stop_auto_cmd))
-    app.add_handler(CommandHandler("send_now", send_now_cmd))
-    app.add_handler(CommandHandler("status", status_cmd))
-    print("Advanced Bot is running...")
+    app.add_handler(CallbackQueryHandler(button_handler))
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, text_message_handler))
+    print("Bot is up and running with buttons and scheduling...")
     app.run_polling()
-    
