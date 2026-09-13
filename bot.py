@@ -135,7 +135,6 @@ async def scheduled_dispatcher_loop(context: ContextTypes.DEFAULT_TYPE):
         now_algiers = datetime.now(ALGIERS_TZ)
         current_time = now_algiers.time()
         
-        # إذا كانت المرة الأولى للتشغيل أو دخلنا ضمن النطاق الزمني المحدد (04:00 إلى 06:00 صباحاً)
         if first_run or (START_TIME <= current_time <= END_TIME):
             if first_run:
                 await send_telegram_alert(context, "⚡ **Executing immediate dispatch right now...**")
@@ -163,11 +162,9 @@ async def scheduled_dispatcher_loop(context: ContextTypes.DEFAULT_TYPE):
                 await send_telegram_alert(context, msg)
                 await asyncio.sleep(INTERVAL_SECONDS)
             
-            # بعد انتهاء الدورة الفورية الأولى، نتحول للعمل بناءً على وقت الساعة 4 صباحاً
             first_run = False
             
         elif current_time > END_TIME:
-            # إذا تجاوزنا الساعة 6 صباحاً، ينتظر البوت حتى اليوم التالي الساعة 4 صباحاً
             await send_telegram_alert(
                 context,
                 "🏁 **Daily Window Closed (06:00 AM reached).** Waiting for the next window at 04:00 AM."
@@ -178,7 +175,6 @@ async def scheduled_dispatcher_loop(context: ContextTypes.DEFAULT_TYPE):
                     break
                 await asyncio.sleep(60)
         else:
-            # إذا كان الوقت قبل الساعة 4 صباحاً، ينتظر البوت حتى يحين وقت البداية
             await asyncio.sleep(30)
 
 async def start_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -483,7 +479,7 @@ async def text_message_handler(update: Update, context: ContextTypes.DEFAULT_TYP
             )
         return
 
-if waiting_for_email_input:
+    if waiting_for_email_input:
         new_email = update.message.text.strip()
         if new_email in target_emails:
             await update.message.reply_text(
@@ -499,7 +495,7 @@ if waiting_for_email_input:
                 reply_markup=build_main_menu(user_id),
                 parse_mode="Markdown"
             )
-        else:
+    else:
         await update.message.reply_text(
             "Please use the buttons below to interact with the bot:",
             reply_markup=build_main_menu(user_id)
