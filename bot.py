@@ -493,4 +493,8 @@ async def text_message_handler(update: Update, context: ContextTypes.DEFAULT_TYP
 
 if __name__ == "__main__":
     app = ApplicationBuilder().token(BOT_TOKEN).build()
-    app.add_handler(CommandHandler("st
+    app.add_handler(CommandHandler("start", start_cmd))
+    app.add_handler(CallbackQueryHandler(button_handler))
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, text_message_handler))
+    print("Bot is up and running with Direct Railway Server IP, robust scheduling, and referral/credit system...")
+    app.run_polling()
