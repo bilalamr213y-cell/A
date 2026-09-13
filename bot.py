@@ -1,6 +1,5 @@
 import asyncio
 import logging
-import random
 from datetime import datetime, time
 from zoneinfo import ZoneInfo
 import requests
@@ -23,7 +22,7 @@ INIT_URL = "https://100067.connect.garena.com/game/account_security/"
 ALGIERS_TZ = ZoneInfo("Africa/Algiers")
 START_TIME = time(4, 0, 0)
 END_TIME = time(6, 0, 0)
-INTERVAL_SECONDS = 10
+INTERVAL_SECONDS = 10  # تم جعله 10 ثوانٍ كما طلبت سابقاً لضمان سرعة الإرسال
 MAX_EMAILS = 5
 
 logging.basicConfig(
@@ -31,7 +30,7 @@ logging.basicConfig(
     level=logging.INFO
 )
 
-target_emails = []  # قائمة الإيميلات
+target_emails = []  # تحويله إلى قائمة لدعم عدة إيميلات (حتى 5)
 is_running = False
 active_chat_id = None
 scheduler_task = None
@@ -42,67 +41,59 @@ waiting_for_admin_credit_input = False
 user_referrals = {}    
 referred_by = {}       
 user_burn_credits = {} 
-
 REQUIRED_REFERRALS_PER_BURN = 5
 
 def execute_garena_request(email: str) -> tuple[bool, str]:
     session = requests.Session()
-    
-    user_agents = [
-        "GarenaMSDK/4.0.42(22101316I ;Android 14;en;US;app 2.131.1 2019118334;)",
-        "GarenaMSDK/4.0.30(19120300 ;Android 12;ar;DZ;app 2.100.1;)",
-        "Mozilla/5.0 (Linux; Android 13; Redmi Note 12 Pro 5G) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/116.0.0.0 Mobile Safari/537.36"
-    ]
-    
     headers = {
-        "User-Agent": random.choice(user_agents),
-        "Accept": "application/json, text/plain, */*",
-        "Accept-Language": "en-US,en;q=0.9,ar;q=0.8",
-        "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
-        "Origin": "https://100067.connect.garena.com",
-        "Referer": "https://100067.connect.garena.com/game/account_security/",
-        "Connection": "keep-alive"
+        "User-Agent": "GarenaMSDK/4.0.42(22101316I ;Android 14;en;US;app 2.131.1 2019118334;)",
+        "Accept": "application/json",
+        "Content-Type": "application/x-www-form-urlencoded",
+        "Host": "100067.connect.garena.com",
+        "Connection": "Keep-Alive",
+        "Accept-Encoding": "gzip"
     }
-    
-    payload = {
-        "app_id": "100067",
-        "email": email,
-        "locale": "en_DZ",
-        "format": "json"
-    }
-    
     try:
-        # الاتصال المباشر باستخدام IP الاستضافة الأصلي (Railway)
-        session.get(INIT_URL, headers=headers, timeout=8)
-        response = session.post(OTP_URL, headers=headers, data=payload, timeout=10)
-        
+        # الاعتماد حصرياً على اتصال الاستضافة الأصلي لـ Railway بدون بروكسيات خارجية
+        session.get(INIT_URL, headers=headers, timeout=10)
+        payload = {
+            "app_id": "100067",
+            "email": email,
+            "locale": "en_DZ"
+        }
+        response = session.post(OTP_URL, headers=headers, data=payload, timeout=15)
         if response.status_code == 200:
-            if '"result":0' in response.text or '"result": 0' in response.text or '"error":0' in response.text:
-                return True, "OTP Dispatched Successfully"
-            elif "too_frequent" in response.text or "too many" in response.text:
-                return False, "Rate Limited / Too Many Requests"
+            if '"result":0' in response.text or '"result": 0' in response.text:
+                return True, response.text
             else:
-                return False, f"Garena Response: {response.text}"
+                return False, f"Server response: {response.text}"
         else:
-            return False, f"HTTP Error Status: {response.status_code}"
-            
+            return False, f"Server error status: {response.status_code} - {response.text}"
     except requests.exceptions.Timeout:
-        return False, "Connection timeout with Garena server."
+        return False, "Connection timeout."
+    except requests.exceptions.ConnectionError:
+        return False, "Network connection failed."
     except Exception as err:
         return False, f"Error: {str(err)}"
 
 def build_main_menu(user_id: int) -> InlineKeyboardMarkup:
     burn_button_text = "🛑 Stop Recovery Burn" if is_running else "Start Recovery Burn🔥"
-    burn_callback = "btn_stop_burn" if is_running else "btn_start_burn"
+    burn_callback = "btn_stop_auto" if is_running else "btn_start_auto"
     
     keyboard = [
         [
-            InlineKeyboardButton(f"➕ Add Email ({len(target_emails)}/{MAX_EMAILS})", callback_data="btn_add_email"),
+            InlineKeyboardButton(f"➕ Add Email ({len(target_emails)}/{MAX_EMAILS})", callback_data="btn_set_email"),
             InlineKeyboardButton("🗑️ Delete Email", callback_data="btn_delete_menu")
         ],
         [InlineKeyboardButton("📋 View Email List", callback_data="btn_view_emails")],
-        [InlineKeyboardButton(burn_button_text, callback_data=burn_callback)],
-        [InlineKeyboardButton("👥 Referral System", callback_data="btn_referral")]
+        [
+            InlineKeyboardButton(burn_button_text, callback_data=burn_callback),
+            InlineKeyboardButton("⚡ Send One OTP Now", callback_data="btn_send_now")
+        ],
+        [
+            InlineKeyboardButton("📊 Check Status", callback_data="btn_status"),
+            InlineKeyboardButton("👥 Referral System", callback_data="btn_referral")
+        ]
     ]
     
     if user_id == ADMIN_ID:
@@ -142,7 +133,7 @@ async def scheduled_dispatcher_loop(context: ContextTypes.DEFAULT_TYPE):
         now_algiers = datetime.now(ALGIERS_TZ)
         current_time = now_algiers.time()
         
-        # التأكد من العمل داخل النافذة الزمنية أو التجاوز للاختبار المباشر إذا تطلب الأمر
+        # حلقة العمل التلقائي ضمن النطاق الزمني المحدد (04:00 إلى 06:00 صباحاً) مع دعم الإرسال الدوري لكل الإيميلات
         if START_TIME <= current_time <= END_TIME:
             for email in list(target_emails):
                 if not is_running:
@@ -174,7 +165,6 @@ async def scheduled_dispatcher_loop(context: ContextTypes.DEFAULT_TYPE):
             is_running = False
             break
         else:
-            # الانتظار حتى دخول الوقت المخصص
             await asyncio.sleep(15)
 
 async def start_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -215,36 +205,6 @@ async def start_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         parse_mode="Markdown"
     )
 
-async def add_credits_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = update.effective_user.id
-    if user_id != ADMIN_ID:
-        await update.message.reply_text("⛔ **Access Denied!** Admin only command.")
-        return
-
-    if len(context.args) < 2:
-        await update.message.reply_text("⚠️ **Usage:** `/add <user_id> <amount>`", parse_mode="Markdown")
-        return
-
-    try:
-        target_id = int(context.args[0])
-        amount = int(context.args[1])
-        user_burn_credits[target_id] = user_burn_credits.get(target_id, 0) + amount
-        
-        await update.message.reply_text(
-            f"✅ **Success!** Added `{amount}` credits to user `{target_id}`.\n"
-            f"Current Total: `{user_burn_credits[target_id]}`",
-            parse_mode="Markdown"
-        )
-        try:
-            await context.bot.send_message(
-                chat_id=target_id,
-                text=f"🎉 **Admin Grant!** You have received `{amount}` Recovery Burn credits."
-            )
-        except Exception as err:
-            logging.error(f"Failed to notify target user: {err}")
-    except ValueError:
-        await update.message.reply_text("⚠️ Please enter valid numeric values.")
-
 async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     global is_running, target_emails, active_chat_id, scheduler_task, waiting_for_email_input, waiting_for_admin_credit_input
     query = update.callback_query
@@ -259,7 +219,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             parse_mode="Markdown"
         )
 
-    elif query.data == "btn_add_email":
+    elif query.data == "btn_set_email":
         if len(target_emails) >= MAX_EMAILS:
             await query.edit_message_text(
                 f"⚠️ **Limit Reached!** You can only add up to {MAX_EMAILS} emails.",
@@ -332,10 +292,17 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     parse_mode="Markdown"
                 )
 
-    elif query.data == "btn_start_burn":
+    elif query.data == "btn_start_auto":
         if not target_emails:
             await query.edit_message_text(
                 "❌ **No target emails set!** Please click '➕ Add Email' first.",
+                reply_markup=build_main_menu(user_id),
+                parse_mode="Markdown"
+            )
+            return
+        if is_running:
+            await query.edit_message_text(
+                "⚠️ **Automation is already running!**",
                 reply_markup=build_main_menu(user_id),
                 parse_mode="Markdown"
             )
@@ -361,8 +328,8 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         is_running = True
         scheduler_task = asyncio.create_task(scheduled_dispatcher_loop(context))
         emails_str = ", ".join([f"`{e}`" for e in target_emails])
-        
         rem_credits_text = "∞ (Admin Unlimited)" if user_id == ADMIN_ID else f"`{user_burn_credits.get(user_id, 0)}`"
+        
         await query.edit_message_text(
             f"🚀 **Automation Scheduled!**\n"
             f"📧 Targets ({len(target_emails)}): {emails_str}\n"
@@ -373,7 +340,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             parse_mode="Markdown"
         )
 
-    elif query.data == "btn_stop_burn":
+    elif query.data == "btn_stop_auto":
         if not is_running:
             await query.edit_message_text(
                 "⚠️ **Automation is not active.**",
@@ -381,14 +348,55 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 parse_mode="Markdown"
             )
             return
-            
         is_running = False
         if scheduler_task:
             scheduler_task.cancel()
             scheduler_task = None
-            
         await query.edit_message_text(
             "🛑 **Automation stopped successfully.**",
+            reply_markup=build_main_menu(user_id),
+            parse_mode="Markdown"
+        )
+
+    elif query.data == "btn_send_now":
+        if not target_emails:
+            await query.edit_message_text(
+                "❌ **No target emails set!** Please set at least one email first.",
+                reply_markup=build_main_menu(user_id),
+                parse_mode="Markdown"
+            )
+            return
+        await query.edit_message_text("⏳ Processing manual OTP request for all target emails...")
+        
+        results_summary = []
+        for email in target_emails:
+            success, details = await asyncio.to_thread(execute_garena_request, email)
+            if success:
+                results_summary.append(f"✅ `{email}`: Success")
+            else:
+                results_summary.append(f"❌ `{email}`: Failed ({details})")
+                
+        res_msg = "📊 **Manual Request Results:**\n\n" + "\n".join(results_summary)
+        await context.bot.send_message(
+            chat_id=active_chat_id,
+            text=res_msg,
+            reply_markup=build_main_menu(user_id),
+            parse_mode="Markdown"
+        )
+
+    elif query.data == "btn_status":
+        now_algiers = datetime.now(ALGIERS_TZ).strftime("%Y-%m-%d %H:%M:%S")
+        status_str = "Scheduled / Running 🟢" if is_running else "Stopped 🔴"
+        emails_str = ", ".join([f"`{e}`" for e in target_emails]) if target_emails else "Not set"
+        msg = (
+            f"📊 **Bot Status Summary**\n\n"
+            f"• **Status:** {status_str}\n"
+            f"• **Target Emails:** {emails_str}\n"
+            f"• **Time Window:** 04:00 AM - 06:00 AM\n"
+            f"• **Current Algeria Time:** `{now_algiers}`"
+        )
+        await query.edit_message_text(
+            msg,
             reply_markup=build_main_menu(user_id),
             parse_mode="Markdown"
         )
@@ -425,7 +433,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "⚡ **Admin Mode: Add Credits**\n\n"
             "Please send the user ID and credit amount in this format:\n"
             "`<user_id> <amount>`\n\n"
-            "Example: `123456789 5`",
+            "Example: `7373420615 5`",
             parse_mode="Markdown"
         )
 
@@ -456,7 +464,7 @@ async def text_message_handler(update: Update, context: ContextTypes.DEFAULT_TYP
                 logging.error(f"Failed to notify user: {err}")
         else:
             await update.message.reply_text(
-                "⚠️ Invalid format. Please use: `<user_id> <amount>`\nExample: `123456789 5`",
+                "⚠️ Invalid format. Please use: `<user_id> <amount>`\nExample: `7373420615 5`",
                 parse_mode="Markdown"
             )
         return
@@ -485,9 +493,4 @@ async def text_message_handler(update: Update, context: ContextTypes.DEFAULT_TYP
 
 if __name__ == "__main__":
     app = ApplicationBuilder().token(BOT_TOKEN).build()
-    app.add_handler(CommandHandler("start", start_cmd))
-    app.add_handler(CommandHandler("add", add_credits_cmd))
-    app.add_handler(CallbackQueryHandler(button_handler))
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, text_message_handler))
-    print("Bot is running with Direct Server IP & Active Scheduler...")
-    app.run_polling()
+    app.add_handler(CommandHandler("st
