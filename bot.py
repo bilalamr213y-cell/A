@@ -20,10 +20,10 @@ OTP_URL = "https://100067.connect.garena.com/game/account_security/swap:send_otp
 INIT_URL = "https://100067.connect.garena.com/game/account_security/"
 
 ALGIERS_TZ = ZoneInfo("Africa/Algiers")
-START_TIME = time(4, 0, 0)
-END_TIME = time(6, 0, 0)
+START_TIME = time(4, 0, 0)  # الساعة 4 صباحاً لبدء دورة جديدة وتصفير العدادات
 INTERVAL_SECONDS = 10  # الفاصل الزمني بين كل إيميل
 MAX_EMAILS = 5
+MAX_DAILY_SENDS_PER_EMAIL = 20  # الحد الأقصى للمحاولات لكل إيميل
 
 logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
@@ -31,6 +31,7 @@ logging.basicConfig(
 )
 
 target_emails = []  
+email_send_counts = {}  # تتبع عدد الإرسالات لكل إيميل
 is_running = False
 active_chat_id = None
 scheduler_task = None
@@ -122,60 +123,81 @@ async def send_telegram_alert(context: ContextTypes.DEFAULT_TYPE, message: str):
             logging.error(f"Failed to send alert: {err}")
 
 async def scheduled_dispatcher_loop(context: ContextTypes.DEFAULT_TYPE):
-    global is_running, target_emails
+    global is_running, target_emails, email_send_counts
     
     await send_telegram_alert(
         context,
-        "🚀 **Automation Started!**\nImmediate dispatch sequence initiated for current time, and scheduled for 04:00 AM daily."
+        "🚀 **Automation Started!**\nDispatching immediately. Each email will send up to 20 times, then wait for 04:00 AM to reset."
     )
     
-    first_run = True  # للبدء الفوري عند الضغط على زر التشغيل
+    last_reset_day = None
 
     while is_running and target_emails:
         now_algiers = datetime.now(ALGIERS_TZ)
         current_time = now_algiers.time()
-        
-        if first_run or (START_TIME <= current_time <= END_TIME):
-            if first_run:
-                await send_telegram_alert(context, "⚡ **Executing immediate dispatch right now...**")
-            
-            for email in list(target_emails):
-                if not is_running:
-                    break
-                success, details = await asyncio.to_thread(execute_garena_request, email)
-                timestamp = datetime.now(ALGIERS_TZ).strftime("%Y-%m-%d %H:%M:%S")
-                if success:
-                    msg = (
-                        f"✅ **OTP Sent Successfully!**\n"
-                        f"📧 Email: `{email}`\n"
-                        f"🕒 Time: `{timestamp}` (Algeria Time)\n"
-                        f"⏱️ Next attempt in {INTERVAL_SECONDS} seconds."
-                    )
-                else:
-                    msg = (
-                        f"❌ **OTP Request Failed!**\n"
-                        f"📧 Email: `{email}`\n"
-                        f"🕒 Time: `{timestamp}` (Algeria Time)\n"
-                        f"⚠️ Details: `{details}`\n"
-                        f"🔄 Retrying in {INTERVAL_SECONDS} seconds."
-                    )
-                await send_telegram_alert(context, msg)
-                await asyncio.sleep(INTERVAL_SECONDS)
-            
-            first_run = False
-            
-        elif current_time > END_TIME:
+        current_day = now_algiers.date()
+
+        # تصفير العدادات عند الساعة 4 صباحاً أو في بداية يوم جديد
+        if current_time >= START_TIME and last_reset_day != current_day:
+            email_send_counts = {email: 0 for email in target_emails}
+            last_reset_day = current_day
             await send_telegram_alert(
                 context,
-                "🏁 **Daily Window Closed (06:00 AM reached).** Waiting for the next window at 04:00 AM."
+                "🔄 **New Daily Window (04:00 AM reached).** All email limits have been reset to 0/20."
+            )
+
+        # التحقق مما إذا كانت كل الإيميلات قد استنفدت محاولاتها الـ 20
+        all_completed = all(email_send_counts.get(email, 0) >= MAX_DAILY_SENDS_PER_EMAIL for email in target_emails)
+
+        if all_completed:
+            await send_telegram_alert(
+                context,
+                f"🏁 **All emails reached the limit ({MAX_DAILY_SENDS_PER_EMAIL} sends).** Waiting for 04:00 AM to reset and restart."
             )
             while is_running:
                 now_check = datetime.now(ALGIERS_TZ)
-                if now_check.time() >= START_TIME and now_check.time() <= END_TIME:
+                # إذا دخلنا وقت الساعة 4 صباحاً، نقوم بالتصفير ونكسر حلقة الانتظار
+                if now_check.time() >= START_TIME and now_check.date() != last_reset_day:
+                    email_send_counts = {email: 0 for email in target_emails}
+                    last_reset_day = now_check.date()
                     break
                 await asyncio.sleep(60)
-        else:
-            await asyncio.sleep(30)
+            continue
+
+        # إرسال دوري للإيميلات التي لم تصل للحد الأقصى
+        for email in list(target_emails):
+            if not is_running:
+                break
+            
+            current_count = email_send_counts.get(email, 0)
+            if current_count >= MAX_DAILY_SENDS_PER_EMAIL:
+                continue  # تخطي الإيميل الذي أكمل 20 محاولة
+
+            success, details = await asyncio.to_thread(execute_garena_request, email)
+            email_send_counts[email] = current_count + 1
+            new_count = email_send_counts[email]
+            
+            timestamp = datetime.now(ALGIERS_TZ).strftime("%Y-%m-%d %H:%M:%S")
+            if success:
+                msg = (
+                    f"✅ **OTP Sent Successfully!**\n"
+                    f"📧 Email: `{email}`\n"
+                    f"📊 Progress: `{new_count}/{MAX_DAILY_SENDS_PER_EMAIL}`\n"
+                    f"🕒 Time: `{timestamp}` (Algeria Time)\n"
+                    f"⏱️ Next attempt in {INTERVAL_SECONDS} seconds."
+                )
+            else:
+                msg = (
+                    f"❌ **OTP Request Failed!**\n"
+                    f"📧 Email: `{email}`\n"
+                    f"📊 Progress: `{new_count}/{MAX_DAILY_SENDS_PER_EMAIL}`\n"
+                    f"🕒 Time: `{timestamp}` (Algeria Time)\n"
+                    f"⚠️ Details: `{details}`"
+                )
+            await send_telegram_alert(context, msg)
+            await asyncio.sleep(INTERVAL_SECONDS)
+        
+        await asyncio.sleep(2)
 
 async def start_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     global active_chat_id
@@ -203,7 +225,7 @@ async def start_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     admin_tag = " (👑 Admin)" if user_id == ADMIN_ID else ""
     welcome_text = (
         f"⚙️ **Free Fire Automated OTP Dispatcher**{admin_tag}\n\n"
-        "• **Schedule:** Starts immediately upon clicking Start, then daily from 04:00 AM to 06:00 AM (Algeria Time)\n"
+        "• **Schedule:** Starts immediately, up to 20 sends per email, resets daily at 04:00 AM (Algeria Time)\n"
         "• **Interval:** Every 10 seconds per email\n"
         "• **Max Emails Allowed:** Up to 5 Emails\n"
         "• **Connection:** Direct Railway Server IP\n\n"
@@ -216,7 +238,7 @@ async def start_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    global is_running, target_emails, active_chat_id, scheduler_task, waiting_for_email_input, waiting_for_admin_credit_input
+    global is_running, target_emails, active_chat_id, scheduler_task, waiting_for_email_input, waiting_for_admin_credit_input, email_send_counts
     query = update.callback_query
     await query.answer()
     active_chat_id = update.effective_chat.id
@@ -253,7 +275,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )
             return
             
-        emails_formatted = "\n".join([f"{i+1}. `{email}`" for i, email in enumerate(target_emails)])
+        emails_formatted = "\n".join([f"{i+1}. `{email}` (Sent: {email_send_counts.get(email, 0)}/{MAX_EMAILS} -> {MAX_DAILY_SENDS_PER_EMAIL})" for i, email in enumerate(target_emails)])
         text = (
             f"📋 **Target Email List ({len(target_emails)}/{MAX_EMAILS}):**\n\n"
             f"{emails_formatted}"
@@ -283,6 +305,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         idx = int(query.data.split("_")[-1])
         if 0 <= idx < len(target_emails):
             removed = target_emails.pop(idx)
+            email_send_counts.pop(removed, None)
             if not target_emails and is_running:
                 is_running = False
                 if scheduler_task:
@@ -341,9 +364,9 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         rem_credits_text = "∞ (Admin Unlimited)" if user_id == ADMIN_ID else f"`{user_burn_credits.get(user_id, 0)}`"
         
         await query.edit_message_text(
-            f"🚀 **Automation Started & Scheduled!**\n"
+            f"🚀 **Automation Started!**\n"
             f"📧 Targets ({len(target_emails)}): {emails_str}\n"
-            f"🕒 Starts immediately, then active daily: 04:00 AM - 06:00 AM\n"
+            f"🔄 Limit: Max {MAX_DAILY_SENDS_PER_EMAIL} sends per email, resets daily at 04:00 AM\n"
             f"⏱️ Interval: Every 10 seconds per email\n"
             f"🎫 Remaining Burn Credits: {rem_credits_text}",
             reply_markup=build_main_menu(user_id),
@@ -396,13 +419,13 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     elif query.data == "btn_status":
         now_algiers = datetime.now(ALGIERS_TZ).strftime("%Y-%m-%d %H:%M:%S")
-        status_str = "Running / Scheduled 🟢" if is_running else "Stopped 🔴"
-        emails_str = ", ".join([f"`{e}`" for e in target_emails]) if target_emails else "Not set"
+        status_str = "Running 🟢" if is_running else "Stopped 🔴"
+        emails_info = "\n".join([f"• `{e}`: {email_send_counts.get(e, 0)}/{MAX_DAILY_SENDS_PER_EMAIL}" for e in target_emails]) if target_emails else "Not set"
         msg = (
             f"📊 **Bot Status Summary**\n\n"
             f"• **Status:** {status_str}\n"
-            f"• **Target Emails:** {emails_str}\n"
-            f"• **Time Window:** Immediate + 04:00 AM - 06:00 AM Daily\n"
+            f"• **Target Emails & Progress:**\n{emails_info}\n\n"
+            f"• **Reset Time:** Daily at 04:00 AM (Algeria Time)\n"
             f"• **Current Algeria Time:** `{now_algiers}`"
         )
         await query.edit_message_text(
@@ -448,7 +471,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
 
 async def text_message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    global target_emails, waiting_for_email_input, waiting_for_admin_credit_input
+    global target_emails, waiting_for_email_input, waiting_for_admin_credit_input, email_send_counts
     user_id = update.effective_user.id
 
     if user_id == ADMIN_ID and waiting_for_admin_credit_input:
@@ -475,7 +498,7 @@ async def text_message_handler(update: Update, context: ContextTypes.DEFAULT_TYP
         else:
             await update.message.reply_text(
                 "⚠️ Invalid format. Please use: `<user_id> <amount>`\nExample: `7373420615 5`",
-                parse_mode="Markdown"
+                parse_Mode="Markdown"
             )
         return
 
@@ -489,6 +512,7 @@ async def text_message_handler(update: Update, context: ContextTypes.DEFAULT_TYP
             )
         else:
             target_emails.append(new_email)
+            email_send_counts[new_email] = 0
             waiting_for_email_input = False
             await update.message.reply_text(
                 f"🎯 Added: `{new_email}`\nTotal Emails: `{len(target_emails)}/{MAX_EMAILS}`",
@@ -506,5 +530,5 @@ if __name__ == "__main__":
     app.add_handler(CommandHandler("start", start_cmd))
     app.add_handler(CallbackQueryHandler(button_handler))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, text_message_handler))
-    print("Bot is up and running with immediate start & 4:00 AM daily scheduling...")
+    print("Bot is up and running with 20 limit per email and 4:00 AM daily reset...")
     app.run_polling()
