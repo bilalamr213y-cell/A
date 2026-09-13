@@ -53,13 +53,13 @@ logging.basicConfig(
     level=logging.INFO
 )
 
-target_emails = []  # قائمة لتخزين حتى 5 إيميلات
+target_emails = []  # قائمة الإيميلات
 is_running = False
 active_chat_id = None
 scheduler_task = None
 waiting_for_email_input = False
 
-# Proxy Rotation Control (تغيير البروكسي كل إرسالين)
+# Proxy Rotation Control (تغيير البروكسي كل طلبين)
 current_proxy = None
 request_counter = 0
 
@@ -122,13 +122,13 @@ def execute_garena_request(email: str) -> tuple[bool, str]:
         return False, f"Error: {str(err)}"
 
 def build_main_menu() -> InlineKeyboardMarkup:
-    burn_button_text = "Stop Recovery Burn🛑" if is_running else "Start Recovery Burn🔥"
+    burn_button_text = "🛑 Stop Recovery Burn" if is_running else "Start Recovery Burn🔥"
     burn_callback = "btn_stop_burn" if is_running else "btn_start_burn"
     
     keyboard = [
         [
             InlineKeyboardButton(f"➕ Add Email ({len(target_emails)}/{MAX_EMAILS})", callback_data="btn_add_email"),
-            InlineKeyboardButton("🗑️ Clear All Emails", callback_data="btn_clear_emails")
+            InlineKeyboardButton("🗑️ Delete Email", callback_data="btn_delete_menu")
         ],
         [InlineKeyboardButton("📋 View Email List", callback_data="btn_view_emails")],
         [InlineKeyboardButton(burn_button_text, callback_data=burn_callback)],
@@ -136,15 +136,14 @@ def build_main_menu() -> InlineKeyboardMarkup:
     ]
     return InlineKeyboardMarkup(keyboard)
 
-def build_email_list_menu() -> InlineKeyboardMarkup:
+def build_delete_menu() -> InlineKeyboardMarkup:
     keyboard = []
-    # إنشاء زر حذف بجانب كل إيميل
+    # عرض الإيميلات لاختيار الإيميل المحدد المراد حذفه
     for idx, email in enumerate(target_emails):
         keyboard.append([
-            InlineKeyboardButton(f"📧 {email}", callback_data=f"email_info_{idx}"),
-            InlineKeyboardButton("❌ Delete", callback_data=f"delete_email_{idx}")
+            InlineKeyboardButton(f"❌ Delete: {email}", callback_data=f"delete_single_{idx}")
         ])
-    keyboard.append([InlineKeyboardButton("🔙 Main Menu", callback_data="btn_main_menu")])
+    keyboard.append([InlineKeyboardButton("🔙 Back to Main Menu", callback_data="btn_main_menu")])
     return InlineKeyboardMarkup(keyboard)
 
 async def send_telegram_alert(context: ContextTypes.DEFAULT_TYPE, message: str):
@@ -280,16 +279,30 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         emails_formatted = "\n".join([f"{i+1}. `{email}`" for i, email in enumerate(target_emails)])
         text = (
             f"📋 **Target Email List ({len(target_emails)}/{MAX_EMAILS}):**\n\n"
-            f"{emails_formatted}\n\n"
-            "Select an email below to remove it:"
+            f"{emails_formatted}"
         )
         await query.edit_message_text(
             text,
-            reply_markup=build_email_list_menu(),
+            reply_markup=build_main_menu(),
             parse_mode="Markdown"
         )
 
-    elif query.data.startswith("delete_email_"):
+    elif query.data == "btn_delete_menu":
+        if not target_emails:
+            await query.edit_message_text(
+                "⚠️ **No emails available to delete!**",
+                reply_markup=build_main_menu(),
+                parse_mode="Markdown"
+            )
+            return
+        
+        await query.edit_message_text(
+            "🗑️ **Select the email you want to delete:**",
+            reply_markup=build_delete_menu(),
+            parse_mode="Markdown"
+        )
+
+    elif query.data.startswith("delete_single_"):
         idx = int(query.data.split("_")[-1])
         if 0 <= idx < len(target_emails):
             removed = target_emails.pop(idx)
@@ -298,43 +311,19 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 if scheduler_task:
                     scheduler_task.cancel()
                     scheduler_task = None
-            
+
             if target_emails:
-                emails_formatted = "\n".join([f"{i+1}. `{email}`" for i, email in enumerate(target_emails)])
-                text = f"🗑️ Removed `{removed}`.\n\n📋 **Updated List:**\n{emails_formatted}"
                 await query.edit_message_text(
-                    text,
-                    reply_markup=build_email_list_menu(),
+                    f"🗑️ Deleted: `{removed}`\n\nSelect another email to delete or return to main menu:",
+                    reply_markup=build_delete_menu(),
                     parse_mode="Markdown"
                 )
             else:
                 await query.edit_message_text(
-                    f"🗑️ Removed `{removed}`. List is now empty.",
+                    f"🗑️ Deleted: `{removed}`\n\nAll emails have been removed.",
                     reply_markup=build_main_menu(),
                     parse_mode="Markdown"
                 )
-
-    elif query.data == "btn_clear_emails":
-        if not target_emails:
-            await query.edit_message_text(
-                "⚠️ **Email list is already empty!**",
-                reply_markup=build_main_menu(),
-                parse_mode="Markdown"
-            )
-            return
-        
-        if is_running:
-            is_running = False
-            if scheduler_task:
-                scheduler_task.cancel()
-                scheduler_task = None
-
-        target_emails.clear()
-        await query.edit_message_text(
-            "🗑️ **All target emails deleted successfully.**",
-            reply_markup=build_main_menu(),
-            parse_mode="Markdown"
-        )
 
     elif query.data == "btn_start_burn":
         if not target_emails:
@@ -445,6 +434,5 @@ if __name__ == "__main__":
     app.add_handler(CommandHandler("start", start_cmd))
     app.add_handler(CallbackQueryHandler(button_handler))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, text_message_handler))
-    print("Bot is up and running with multi-email list support...")
+    print("Bot is running without clear all option...")
     app.run_polling()
-    
