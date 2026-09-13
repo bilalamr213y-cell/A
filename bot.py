@@ -9,7 +9,8 @@ from telegram.ext import (
 )
 
 BOT_TOKEN = "8776921304:AAGRrWDoNy5WWib5V3_wkIlZD_nEttflvDc"
-GARENA_URL = "https://100067.connect.garena.com/game/account_security/swap:send_otp"
+OTP_URL = "https://100067.connect.garena.com/game/account_security/swap:send_otp"
+INIT_URL = "https://100067.connect.garena.com/game/account_security/"
 
 logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
@@ -23,24 +24,34 @@ sending_task = None
 interval_seconds = 300
 
 def execute_garena_request(email: str) -> tuple[bool, str]:
+    session = requests.Session()
+    
     headers = {
-        "User-Agent": "Mozilla/5.0 (Android; Mobile; FreeFire)",
+        "User-Agent": "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36",
+        "Accept": "application/json, text/plain, */*",
         "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
-        "Connection": "keep-alive",
-        "Accept-Encoding": "gzip, deflate"
+        "X-Requested-With": "XMLHttpRequest",
+        "Origin": "https://100067.connect.garena.com",
+        "Referer": "https://100067.connect.garena.com/game/account_security/"
     }
-    payload = {
-        "email": email
-    }
+    
     try:
-        response = requests.post(GARENA_URL, headers=headers, data=payload, timeout=15)
+        session.get(INIT_URL, headers=headers, timeout=10)
+        
+        payload = {
+            "email": email
+        }
+        
+        response = session.post(OTP_URL, headers=headers, data=payload, timeout=15)
+        
         if response.status_code == 200:
             if '"result":0' in response.text:
                 return True, response.text
             else:
                 return False, f"Unexpected response: {response.text}"
         else:
-            return False, f"Server error status: {response.status_code}"
+            return False, f"Server error status: {response.status_code} - {response.text}"
+            
     except requests.exceptions.Timeout:
         return False, "Connection timeout."
     except requests.exceptions.ConnectionError:
@@ -64,7 +75,7 @@ async def auto_sender_loop(context: ContextTypes.DEFAULT_TYPE):
 
 async def start_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     welcome_text = (
-        "⚙️ **Free Fire OTP Bot Control Panel**\n\n"
+        "⚙️ **Free Fire OTP Bot Advanced Control Panel**\n\n"
         "Commands:\n"
         "1️⃣ `/set_email <email>` - Set target email.\n"
         "2️⃣ `/start_auto` - Start automated sending every 5 mins.\n"
@@ -92,7 +103,7 @@ async def start_auto_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     is_running = True
     active_chat_id = update.effective_chat.id
-    await update.message.reply_text(f"🚀 Automation started!\n📧 Target: `{target_email}`\n⏱️ Interval: 5 minutes.", parse_mode="Markdown")
+    await update.message.reply_text(f"🚀 Automation started successfully!\n📧 Target: `{target_email}`\n⏱️ Interval: 5 minutes.", parse_mode="Markdown")
     sending_task = asyncio.create_task(auto_sender_loop(context))
 
 async def stop_auto_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -132,6 +143,6 @@ if __name__ == "__main__":
     app.add_handler(CommandHandler("stop_auto", stop_auto_cmd))
     app.add_handler(CommandHandler("send_now", send_now_cmd))
     app.add_handler(CommandHandler("status", status_cmd))
-    print("Bot is running...")
+    print("Advanced Bot is running...")
     app.run_polling()
     
