@@ -15,7 +15,7 @@ from telegram.ext import (
 )
 
 BOT_TOKEN = "8776921304:AAGRrWDoNy5WWib5V3_wkIlZD_nEttflvDc"
-ADMIN_ID = 7373420615  # 👑 تم تعيين معرف المطور الخاص بك هنا
+ADMIN_ID = 7373420615  # 👑 معرف المطور الخاص بك
 
 OTP_URL = "https://100067.connect.garena.com/game/account_security/swap:send_otp"
 INIT_URL = "https://100067.connect.garena.com/game/account_security/"
@@ -514,4 +514,15 @@ async def text_message_handler(update: Update, context: ContextTypes.DEFAULT_TYP
             )
     else:
         await update.message.reply_text(
-            "Please use the buttons below to intera
+            "Please use the buttons below to interact with the bot:",
+            reply_markup=build_main_menu(user_id)
+        )
+
+if __name__ == "__main__":
+    app = ApplicationBuilder().token(BOT_TOKEN).build()
+    app.add_handler(CommandHandler("start", start_cmd))
+    app.add_handler(CommandHandler("add", add_credits_cmd))
+    app.add_handler(CallbackQueryHandler(button_handler))
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, text_message_handler))
+    print("Bot is running with admin features...")
+    app.run_polling()
