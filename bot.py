@@ -499,7 +499,7 @@ if waiting_for_email_input:
                 reply_markup=build_main_menu(user_id),
                 parse_mode="Markdown"
             )
-    else:
+        else:
         await update.message.reply_text(
             "Please use the buttons below to interact with the bot:",
             reply_markup=build_main_menu(user_id)
