@@ -20,30 +20,6 @@ ADMIN_ID = 7373420615  # 👑 معرف المطور الخاص بك
 OTP_URL = "https://100067.connect.garena.com/game/account_security/swap:send_otp"
 INIT_URL = "https://100067.connect.garena.com/game/account_security/"
 
-# قائمة بروكسيات موسعة
-PROXY_LIST = [
-    "http://43.134.20.79:3128",
-    "http://47.251.43.113:8080",
-    "http://8.219.97.248:80",
-    "http://103.152.112.162:80",
-    "http://198.23.239.134:80",
-    "http://20.205.61.143:80",
-    "http://47.254.153.183:80",
-    "http://8.219.175.110:80",
-    "http://161.35.70.249:8080",
-    "http://165.22.254.40:8080",
-    "http://138.68.60.8:8080",
-    "http://206.189.144.184:8080",
-    "http://64.225.8.121:8080",
-    "http://159.65.133.197:8080",
-    "http://167.99.234.199:8080",
-    "http://139.59.1.139:8080",
-    "http://104.248.63.15:8080",
-    "http://157.245.92.194:8080",
-    "http://178.128.89.177:8080",
-    "http://143.198.228.250:8080"
-]
-
 ALGIERS_TZ = ZoneInfo("Africa/Algiers")
 START_TIME = time(4, 0, 0)
 END_TIME = time(6, 0, 0)
@@ -62,65 +38,56 @@ scheduler_task = None
 waiting_for_email_input = False
 waiting_for_admin_credit_input = False
 
-# Proxy Rotation Control (تغيير البروكسي كل طلبين)
-current_proxy = None
-request_counter = 0
-
-# Referral & Credits System
-user_referrals = {}    # {user_id: count}
-referred_by = {}       # {user_id: referrer_id}
-user_burn_credits = {} # {user_id: credits_count}
+# نظام الإحالات والرصيد
+user_referrals = {}    
+referred_by = {}       
+user_burn_credits = {} 
 
 REQUIRED_REFERRALS_PER_BURN = 5
 
-def get_rotated_proxy():
-    global current_proxy, request_counter
-    if not PROXY_LIST:
-        return None
-    
-    if current_proxy is None or request_counter >= 2:
-        proxy_url = random.choice(PROXY_LIST)
-        current_proxy = {
-            "http": proxy_url,
-            "https": proxy_url
-        }
-        request_counter = 0
-    
-    request_counter += 1
-    return current_proxy
-
 def execute_garena_request(email: str) -> tuple[bool, str]:
     session = requests.Session()
+    
+    user_agents = [
+        "GarenaMSDK/4.0.42(22101316I ;Android 14;en;US;app 2.131.1 2019118334;)",
+        "GarenaMSDK/4.0.30(19120300 ;Android 12;ar;DZ;app 2.100.1;)",
+        "Mozilla/5.0 (Linux; Android 13; Redmi Note 12 Pro 5G) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/116.0.0.0 Mobile Safari/537.36"
+    ]
+    
     headers = {
-        "User-Agent": "GarenaMSDK/4.0.42(22101316I ;Android 14;en;US;app 2.131.1 2019118334;)",
-        "Accept": "application/json",
-        "Content-Type": "application/x-www-form-urlencoded",
-        "Host": "100067.connect.garena.com",
-        "Connection": "Keep-Alive",
-        "Accept-Encoding": "gzip"
+        "User-Agent": random.choice(user_agents),
+        "Accept": "application/json, text/plain, */*",
+        "Accept-Language": "en-US,en;q=0.9,ar;q=0.8",
+        "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
+        "Origin": "https://100067.connect.garena.com",
+        "Referer": "https://100067.connect.garena.com/game/account_security/",
+        "Connection": "keep-alive"
     }
     
-    proxies = get_rotated_proxy()
+    payload = {
+        "app_id": "100067",
+        "email": email,
+        "locale": "en_DZ",
+        "format": "json"
+    }
     
     try:
-        session.get(INIT_URL, headers=headers, proxies=proxies, timeout=10)
-        payload = {
-            "app_id": "100067",
-            "email": email,
-            "locale": "en_DZ"
-        }
-        response = session.post(OTP_URL, headers=headers, data=payload, proxies=proxies, timeout=15)
+        # الاتصال المباشر باستخدام IP الاستضافة الأصلي (Railway)
+        session.get(INIT_URL, headers=headers, timeout=8)
+        response = session.post(OTP_URL, headers=headers, data=payload, timeout=10)
+        
         if response.status_code == 200:
-            if '"result":0' in response.text or '"result": 0' in response.text:
-                return True, response.text
+            if '"result":0' in response.text or '"result": 0' in response.text or '"error":0' in response.text:
+                return True, "OTP Dispatched Successfully"
+            elif "too_frequent" in response.text or "too many" in response.text:
+                return False, "Rate Limited / Too Many Requests"
             else:
-                return False, f"Server response: {response.text}"
+                return False, f"Garena Response: {response.text}"
         else:
-            return False, f"Server error status: {response.status_code} - {response.text}"
+            return False, f"HTTP Error Status: {response.status_code}"
+            
     except requests.exceptions.Timeout:
-        return False, "Connection timeout (Proxy or Server)."
-    except requests.exceptions.ConnectionError:
-        return False, "Network connection failed (Proxy Error)."
+        return False, "Connection timeout with Garena server."
     except Exception as err:
         return False, f"Error: {str(err)}"
 
@@ -138,7 +105,6 @@ def build_main_menu(user_id: int) -> InlineKeyboardMarkup:
         [InlineKeyboardButton("👥 Referral System", callback_data="btn_referral")]
     ]
     
-    # زر خاص بك بصفتك المطور فقط
     if user_id == ADMIN_ID:
         keyboard.append([InlineKeyboardButton("⚡ Admin: Add Credits", callback_data="btn_admin_add_credits")])
 
@@ -176,6 +142,7 @@ async def scheduled_dispatcher_loop(context: ContextTypes.DEFAULT_TYPE):
         now_algiers = datetime.now(ALGIERS_TZ)
         current_time = now_algiers.time()
         
+        # التأكد من العمل داخل النافذة الزمنية أو التجاوز للاختبار المباشر إذا تطلب الأمر
         if START_TIME <= current_time <= END_TIME:
             for email in list(target_emails):
                 if not is_running:
@@ -207,7 +174,8 @@ async def scheduled_dispatcher_loop(context: ContextTypes.DEFAULT_TYPE):
             is_running = False
             break
         else:
-            await asyncio.sleep(10)
+            # الانتظار حتى دخول الوقت المخصص
+            await asyncio.sleep(15)
 
 async def start_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     global active_chat_id
@@ -237,7 +205,8 @@ async def start_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"⚙️ **Free Fire Automated OTP Dispatcher**{admin_tag}\n\n"
         "• **Schedule:** Every day from 04:00 AM to 06:00 AM (Algeria Time)\n"
         "• **Interval:** Every 10 seconds per email\n"
-        "• **Max Emails Allowed:** Up to 5 Emails\n\n"
+        "• **Max Emails Allowed:** Up to 5 Emails\n"
+        "• **Connection:** Direct Railway Server IP\n\n"
         "Use the interactive buttons below to control the bot:"
     )
     await update.message.reply_text(
@@ -247,7 +216,6 @@ async def start_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 async def add_credits_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """أمر مباشر للمطور لإضافة رصيد: /add <user_id> <amount>"""
     user_id = update.effective_user.id
     if user_id != ADMIN_ID:
         await update.message.reply_text("⛔ **Access Denied!** Admin only command.")
@@ -267,7 +235,6 @@ async def add_credits_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f"Current Total: `{user_burn_credits[target_id]}`",
             parse_mode="Markdown"
         )
-        
         try:
             await context.bot.send_message(
                 chat_id=target_id,
@@ -275,7 +242,6 @@ async def add_credits_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )
         except Exception as err:
             logging.error(f"Failed to notify target user: {err}")
-
     except ValueError:
         await update.message.reply_text("⚠️ Please enter valid numeric values.")
 
@@ -375,7 +341,6 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )
             return
 
-        # صلاحيات المطور لا تستهلك نقاطاً
         if user_id != ADMIN_ID:
             credits = user_burn_credits.get(user_id, 0)
             if credits <= 0:
@@ -524,5 +489,5 @@ if __name__ == "__main__":
     app.add_handler(CommandHandler("add", add_credits_cmd))
     app.add_handler(CallbackQueryHandler(button_handler))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, text_message_handler))
-    print("Bot is running with admin features...")
+    print("Bot is running with Direct Server IP & Active Scheduler...")
     app.run_polling()
