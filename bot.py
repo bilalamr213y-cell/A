@@ -73,9 +73,16 @@ def execute_garena_request(email: str) -> tuple[bool, str]:
         return False, f"Error: {str(err)}"
 
 def build_main_menu() -> InlineKeyboardMarkup:
+    # زر التشغيل/الإيقاف المتبدل
+    burn_button_text = "🛑Stop Recovery Burn" if is_running else "Start Recovery Burn🔥"
+    burn_callback = "btn_stop_burn" if is_running else "btn_start_burn"
+    
     keyboard = [
-        [InlineKeyboardButton("➕ Add Email", callback_data="btn_add_email")],
-        [InlineKeyboardButton("🔥 Start Recovery Burn (04:00 AM)", callback_data="btn_start_burn")],
+        [
+            InlineKeyboardButton("➕ Add Email", callback_data="btn_add_email"),
+            InlineKeyboardButton("🗑️ Delete Email", callback_data="btn_delete_email")
+        ],
+        [InlineKeyboardButton(burn_button_text, callback_data=burn_callback)],
         [InlineKeyboardButton("👥 Referral System", callback_data="btn_referral")]
     ]
     return InlineKeyboardMarkup(keyboard)
@@ -146,7 +153,6 @@ async def start_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 referred_by[user_id] = referrer_id
                 user_referrals[referrer_id] = user_referrals.get(referrer_id, 0) + 1
                 
-                # Check if referrer reached 5 invites to earn 1 burn credit
                 if user_referrals[referrer_id] % REQUIRED_REFERRALS_PER_BURN == 0:
                     user_burn_credits[referrer_id] = user_burn_credits.get(referrer_id, 0) + 1
                     try:
@@ -183,6 +189,29 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             parse_mode="Markdown"
         )
 
+    elif query.data == "btn_delete_email":
+        if not target_email:
+            await query.edit_message_text(
+                "⚠️ **No target email to delete!**",
+                reply_markup=build_main_menu(),
+                parse_mode="Markdown"
+            )
+            return
+        
+        # إذا كان الحرق يعمل، يتم إيقافه تلقائياً عند حذف الإيميل
+        if is_running:
+            is_running = False
+            if scheduler_task:
+                scheduler_task.cancel()
+                scheduler_task = None
+
+        target_email = None
+        await query.edit_message_text(
+            "🗑️ **Target email deleted successfully.**",
+            reply_markup=build_main_menu(),
+            parse_mode="Markdown"
+        )
+
     elif query.data == "btn_start_burn":
         if not target_email:
             await query.edit_message_text(
@@ -207,15 +236,6 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )
             return
 
-        if is_running:
-            await query.edit_message_text(
-                "⚠️ **Automation is already running!**",
-                reply_markup=build_main_menu(),
-                parse_mode="Markdown"
-            )
-            return
-
-        # Deduct 1 credit for starting the burn session
         user_burn_credits[user_id] -= 1
         is_running = True
         scheduler_task = asyncio.create_task(scheduled_dispatcher_loop(context))
@@ -225,6 +245,26 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f"🕒 Active Window: 04:00 AM - 06:00 AM (Algeria Time)\n"
             f"⏱️ Interval: Every 10 seconds\n"
             f"🎫 Remaining Burn Credits: `{user_burn_credits[user_id]}`",
+            reply_markup=build_main_menu(),
+            parse_mode="Markdown"
+        )
+
+    elif query.data == "btn_stop_burn":
+        if not is_running:
+            await query.edit_message_text(
+                "⚠️ **Automation is not active.**",
+                reply_markup=build_main_menu(),
+                parse_mode="Markdown"
+            )
+            return
+            
+        is_running = False
+        if scheduler_task:
+            scheduler_task.cancel()
+            scheduler_task = None
+            
+        await query.edit_message_text(
+            "🛑 **Automation stopped successfully.**",
             reply_markup=build_main_menu(),
             parse_mode="Markdown"
         )
