@@ -1,7 +1,7 @@
 import asyncio
 import logging
 from datetime import datetime, time
-import pytz
+from zoneinfo import ZoneInfo
 import requests
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.ext import (
@@ -17,7 +17,7 @@ BOT_TOKEN = "8776921304:AAGRrWDoNy5WWib5V3_wkIlZD_nEttflvDc"
 OTP_URL = "https://100067.connect.garena.com/game/account_security/swap:send_otp"
 INIT_URL = "https://100067.connect.garena.com/game/account_security/"
 
-ALGIERS_TZ = pytz.timezone("Africa/Algiers")
+ALGIERS_TZ = ZoneInfo("Africa/Algiers")
 START_TIME = time(4, 0, 0)
 END_TIME = time(6, 0, 0)
 INTERVAL_SECONDS = 300
@@ -265,3 +265,4 @@ if __name__ == "__main__":
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, text_message_handler))
     print("Bot is up and running with buttons and scheduling...")
     app.run_polling()
+    
