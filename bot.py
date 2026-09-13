@@ -22,7 +22,7 @@ INIT_URL = "https://100067.connect.garena.com/game/account_security/"
 ALGIERS_TZ = ZoneInfo("Africa/Algiers")
 START_TIME = time(4, 0, 0)
 END_TIME = time(6, 0, 0)
-INTERVAL_SECONDS = 10  # تم جعله 10 ثوانٍ كما طلبت سابقاً لضمان سرعة الإرسال
+INTERVAL_SECONDS = 10  # الفاصل الزمني بين كل إيميل
 MAX_EMAILS = 5
 
 logging.basicConfig(
@@ -30,7 +30,7 @@ logging.basicConfig(
     level=logging.INFO
 )
 
-target_emails = []  # تحويله إلى قائمة لدعم عدة إيميلات (حتى 5)
+target_emails = []  
 is_running = False
 active_chat_id = None
 scheduler_task = None
@@ -54,7 +54,6 @@ def execute_garena_request(email: str) -> tuple[bool, str]:
         "Accept-Encoding": "gzip"
     }
     try:
-        # الاعتماد حصرياً على اتصال الاستضافة الأصلي لـ Railway بدون بروكسيات خارجية
         session.get(INIT_URL, headers=headers, timeout=10)
         payload = {
             "app_id": "100067",
@@ -124,28 +123,34 @@ async def send_telegram_alert(context: ContextTypes.DEFAULT_TYPE, message: str):
 
 async def scheduled_dispatcher_loop(context: ContextTypes.DEFAULT_TYPE):
     global is_running, target_emails
+    
     await send_telegram_alert(
         context,
-        "⏰ **Scheduler Activated!**\nWaiting for 04:00 AM (Algeria Time) to begin dispatch sequence..."
+        "🚀 **Automation Started!**\nImmediate dispatch sequence initiated for current time, and scheduled for 04:00 AM daily."
     )
     
+    first_run = True  # للبدء الفوري عند الضغط على زر التشغيل
+
     while is_running and target_emails:
         now_algiers = datetime.now(ALGIERS_TZ)
         current_time = now_algiers.time()
         
-        # حلقة العمل التلقائي ضمن النطاق الزمني المحدد (04:00 إلى 06:00 صباحاً) مع دعم الإرسال الدوري لكل الإيميلات
-        if START_TIME <= current_time <= END_TIME:
+        # إذا كانت المرة الأولى للتشغيل أو دخلنا ضمن النطاق الزمني المحدد (04:00 إلى 06:00 صباحاً)
+        if first_run or (START_TIME <= current_time <= END_TIME):
+            if first_run:
+                await send_telegram_alert(context, "⚡ **Executing immediate dispatch right now...**")
+            
             for email in list(target_emails):
                 if not is_running:
                     break
                 success, details = await asyncio.to_thread(execute_garena_request, email)
-                timestamp = now_algiers.strftime("%Y-%m-%d %H:%M:%S")
+                timestamp = datetime.now(ALGIERS_TZ).strftime("%Y-%m-%d %H:%M:%S")
                 if success:
                     msg = (
                         f"✅ **OTP Sent Successfully!**\n"
                         f"📧 Email: `{email}`\n"
                         f"🕒 Time: `{timestamp}` (Algeria Time)\n"
-                        f"⏱️ Next attempt in 10 seconds."
+                        f"⏱️ Next attempt in {INTERVAL_SECONDS} seconds."
                     )
                 else:
                     msg = (
@@ -153,19 +158,28 @@ async def scheduled_dispatcher_loop(context: ContextTypes.DEFAULT_TYPE):
                         f"📧 Email: `{email}`\n"
                         f"🕒 Time: `{timestamp}` (Algeria Time)\n"
                         f"⚠️ Details: `{details}`\n"
-                        f"🔄 Retrying in 10 seconds."
+                        f"🔄 Retrying in {INTERVAL_SECONDS} seconds."
                     )
                 await send_telegram_alert(context, msg)
                 await asyncio.sleep(INTERVAL_SECONDS)
+            
+            # بعد انتهاء الدورة الفورية الأولى، نتحول للعمل بناءً على وقت الساعة 4 صباحاً
+            first_run = False
+            
         elif current_time > END_TIME:
+            # إذا تجاوزنا الساعة 6 صباحاً، ينتظر البوت حتى اليوم التالي الساعة 4 صباحاً
             await send_telegram_alert(
                 context,
-                "🏁 **Daily Window Closed (06:00 AM reached).** Automation completed for today."
+                "🏁 **Daily Window Closed (06:00 AM reached).** Waiting for the next window at 04:00 AM."
             )
-            is_running = False
-            break
+            while is_running:
+                now_check = datetime.now(ALGIERS_TZ)
+                if now_check.time() >= START_TIME and now_check.time() <= END_TIME:
+                    break
+                await asyncio.sleep(60)
         else:
-            await asyncio.sleep(15)
+            # إذا كان الوقت قبل الساعة 4 صباحاً، ينتظر البوت حتى يحين وقت البداية
+            await asyncio.sleep(30)
 
 async def start_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     global active_chat_id
@@ -193,7 +207,7 @@ async def start_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     admin_tag = " (👑 Admin)" if user_id == ADMIN_ID else ""
     welcome_text = (
         f"⚙️ **Free Fire Automated OTP Dispatcher**{admin_tag}\n\n"
-        "• **Schedule:** Every day from 04:00 AM to 06:00 AM (Algeria Time)\n"
+        "• **Schedule:** Starts immediately upon clicking Start, then daily from 04:00 AM to 06:00 AM (Algeria Time)\n"
         "• **Interval:** Every 10 seconds per email\n"
         "• **Max Emails Allowed:** Up to 5 Emails\n"
         "• **Connection:** Direct Railway Server IP\n\n"
@@ -331,9 +345,9 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         rem_credits_text = "∞ (Admin Unlimited)" if user_id == ADMIN_ID else f"`{user_burn_credits.get(user_id, 0)}`"
         
         await query.edit_message_text(
-            f"🚀 **Automation Scheduled!**\n"
+            f"🚀 **Automation Started & Scheduled!**\n"
             f"📧 Targets ({len(target_emails)}): {emails_str}\n"
-            f"🕒 Active Window: 04:00 AM - 06:00 AM (Algeria Time)\n"
+            f"🕒 Starts immediately, then active daily: 04:00 AM - 06:00 AM\n"
             f"⏱️ Interval: Every 10 seconds per email\n"
             f"🎫 Remaining Burn Credits: {rem_credits_text}",
             reply_markup=build_main_menu(user_id),
@@ -386,13 +400,13 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     elif query.data == "btn_status":
         now_algiers = datetime.now(ALGIERS_TZ).strftime("%Y-%m-%d %H:%M:%S")
-        status_str = "Scheduled / Running 🟢" if is_running else "Stopped 🔴"
+        status_str = "Running / Scheduled 🟢" if is_running else "Stopped 🔴"
         emails_str = ", ".join([f"`{e}`" for e in target_emails]) if target_emails else "Not set"
         msg = (
             f"📊 **Bot Status Summary**\n\n"
             f"• **Status:** {status_str}\n"
             f"• **Target Emails:** {emails_str}\n"
-            f"• **Time Window:** 04:00 AM - 06:00 AM\n"
+            f"• **Time Window:** Immediate + 04:00 AM - 06:00 AM Daily\n"
             f"• **Current Algeria Time:** `{now_algiers}`"
         )
         await query.edit_message_text(
@@ -469,7 +483,7 @@ async def text_message_handler(update: Update, context: ContextTypes.DEFAULT_TYP
             )
         return
 
-    if waiting_for_email_input:
+if waiting_for_email_input:
         new_email = update.message.text.strip()
         if new_email in target_emails:
             await update.message.reply_text(
@@ -496,5 +510,5 @@ if __name__ == "__main__":
     app.add_handler(CommandHandler("start", start_cmd))
     app.add_handler(CallbackQueryHandler(button_handler))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, text_message_handler))
-    print("Bot is up and running with Direct Railway Server IP, robust scheduling, and referral/credit system...")
+    print("Bot is up and running with immediate start & 4:00 AM daily scheduling...")
     app.run_polling()
