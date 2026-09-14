@@ -21,9 +21,9 @@ INIT_URL = "https://100067.connect.garena.com/game/account_security/"
 
 ALGIERS_TZ = ZoneInfo("Africa/Algiers")
 START_TIME = time(4, 0, 0)  # الساعة 4 صباحاً لبدء دورة جديدة وتصفير العدادات
-INTERVAL_SECONDS = 10  # الفاصل الزمني بين كل إيميل
+INTERVAL_SECONDS = 0.001  # الفاصل الزمني بين كل إيميل
 MAX_EMAILS = 5
-MAX_DAILY_SENDS_PER_EMAIL = 20  # الحد الأقصى للمحاولات لكل إيميل
+MAX_DAILY_SENDS_PER_EMAIL = 10000  # الحد الأقصى للمحاولات لكل إيميل
 
 logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
