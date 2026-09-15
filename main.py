@@ -572,7 +572,7 @@ async def text_message_handler(update: Update, context: ContextTypes.DEFAULT_TYP
         WAITING_INPUT.pop(user_id, None)
         if not is_valid_token(text.lower()):
             await update.message.reply_text("❌ توكن غير صالح. لازم 64 حرف hex.")
-return
+        return
 
     wait = await update.message.reply_text("🔍 **جاري البحث...**")
 
