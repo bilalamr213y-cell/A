@@ -1,7 +1,7 @@
 import os
 
-BOT_TOKEN = os.getenv("BOT_TOKEN", "")
-ADMIN_ID = int(os.getenv("ADMIN_ID", "0"))
+BOT_TOKEN = os.getenv("BOT_TOKEN", "8776921304:AAGRrWDoNy5WWib5V3_wkIlZD_nEttflvDc")
+ADMIN_ID = int(os.getenv("ADMIN_ID", "7373420615"))
 DATABASE_FILE = os.getenv("DATABASE_FILE", "bot_data.db")
 
 GARENA_BASE_URL = "https://100067.connect.garena.com"
